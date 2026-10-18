@@ -1,0 +1,219 @@
+
+package com.ga.waslah.service;
+
+import com.ga.waslah.exception.BadRequestException;
+import com.ga.waslah.exception.ResourceNotFoundException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.UUID;
+
+
+@Service
+public class ProfileImageStorageService {
+
+    private static final long MAX_FILE_SIZE = 5L * 1024 * 1024;
+
+    private final Path uploadDirectory;
+
+    public ProfileImageStorageService(
+            @Value("${app.upload.profile-images-dir}")
+            String uploadDirectory
+    ) {
+        this.uploadDirectory = Paths.get(uploadDirectory)
+                .toAbsolutePath()
+                .normalize();
+    }
+
+    /**
+     * Validates and stores a profile image using a UUID filename.
+     *
+     * @param image uploaded image
+     * @return the generated filename stored in the database
+     */
+    public String storeImage(MultipartFile image) {
+
+        if (image == null || image.isEmpty()) {
+            throw new BadRequestException("Please select an image");
+        }
+
+        if (image.getSize() > MAX_FILE_SIZE) {
+            throw new BadRequestException(
+                    "Image size must not exceed 5MB"
+            );
+        }
+
+        String contentType = image.getContentType();
+
+        if (contentType == null ||
+                !(contentType.equalsIgnoreCase("image/jpeg")
+                        || contentType.equalsIgnoreCase("image/png"))) {
+            throw new BadRequestException(
+                    "Only JPG and PNG images are allowed"
+            );
+        }
+
+        String extension;
+
+        try (InputStream input = image.getInputStream()) {
+
+            BufferedImage bufferedImage = ImageIO.read(input);
+
+            if (bufferedImage == null) {
+                throw new BadRequestException(
+                        "The uploaded file is not a valid image"
+                );
+            }
+
+            String format = detectImageFormat(image);
+
+            if ("jpeg".equals(format)) {
+                extension = ".jpg";
+            } else if ("png".equals(format)) {
+                extension = ".png";
+            } else {
+                throw new BadRequestException(
+                        "Only JPG and PNG images are allowed"
+                );
+            }
+
+        } catch (IOException exception) {
+            throw new BadRequestException(
+                    "Unable to read the uploaded image"
+            );
+        }
+
+        String filename = UUID.randomUUID() + extension;
+        Path destination = uploadDirectory.resolve(filename).normalize();
+
+        // Ensure the destination remains inside the upload directory.
+        if (!destination.startsWith(uploadDirectory)) {
+            throw new BadRequestException("Invalid image filename");
+        }
+
+        try {
+            Files.createDirectories(uploadDirectory);
+
+            // Do not overwrite an existing file.
+            Files.copy(image.getInputStream(), destination);
+
+            return filename;
+
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "Unable to save the profile image",
+                    exception
+            );
+        }
+    }
+
+    private String detectImageFormat(MultipartFile image)
+            throws IOException {
+
+        try (InputStream input = image.getInputStream()) {
+            BufferedImage bufferedImage = ImageIO.read(input);
+
+            if (bufferedImage == null) {
+                return "";
+            }
+        }
+
+        // ImageIO's format detection from the actual file bytes.
+        try (InputStream input = image.getInputStream()) {
+            byte[] header = input.readNBytes(8);
+
+            if (header.length >= 8
+                    && (header[0] & 0xFF) == 0x89
+                    && header[1] == 0x50
+                    && header[2] == 0x4E
+                    && header[3] == 0x47) {
+                return "png";
+            }
+
+            if (header.length >= 3
+                    && (header[0] & 0xFF) == 0xFF
+                    && (header[1] & 0xFF) == 0xD8
+                    && (header[2] & 0xFF) == 0xFF) {
+                return "jpeg";
+            }
+        }
+
+        return "";
+    }
+
+    /**
+     * Loads a stored profile image by its generated filename.
+     *
+     * @param filename generated image filename
+     * @return the image as a resource
+     * @throws BadRequestException if the filename is invalid or the image is missing
+     */
+    public Resource loadImage(String filename) {
+        // Only accept UUID filenames generated by the upload service.
+        if (filename == null ||
+                !filename.matches(
+                        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.(jpg|png)$"
+                )) {
+            throw new BadRequestException("Invalid image filename");
+        }
+
+        Path file = uploadDirectory.resolve(filename).normalize();
+
+        if (!file.startsWith(uploadDirectory) || !Files.isRegularFile(file)) {
+            throw new ResourceNotFoundException("Profile image not found");
+        }
+
+        try {
+            Resource resource = new UrlResource(file.toUri());
+
+            if (resource.exists() && resource.isReadable()) {
+                return resource;
+            }
+
+            throw new ResourceNotFoundException("Profile image not found");
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "Unable to read the profile image",
+                    exception
+            );
+        }
+    }
+
+    /**
+     * Deletes a stored profile image, e.g. after it has been replaced.
+     * Unknown or invalid file names are ignored.
+     *
+     * @param filename generated image filename
+     */
+    public void deleteImage(String filename) {
+        if (filename == null ||
+                !filename.matches(
+                        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.(jpg|png)$"
+                )) {
+            return;
+        }
+
+        Path file = uploadDirectory.resolve(filename).normalize();
+
+        if (!file.startsWith(uploadDirectory)) {
+            return;
+        }
+
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException exception) {
+            // The old file is only clutter; do not fail the request.
+        }
+    }
+}
