@@ -363,15 +363,10 @@ erDiagram
     }
 ```
 
-ERD image / dbdiagram.io link: **[add link or `docs/erd.png` here]**
-
----
 
 ## Planning
 
 The project was divided into daily deliverables (planning, database, core APIs, authentication, account security, booking module, testing). The full plan is in [`PROJECT PLAN.md`](./PROJECT%20PLAN.md).
-
-Trello planning board (deliverables, timeline, scope, progress): **[add Trello planning board link here]**
 
 ---
 
@@ -594,13 +589,6 @@ Choose a profile with `SPRING_PROFILES_ACTIVE` (e.g. `export SPRING_PROFILES_ACT
 | `ADMIN_EMAIL` | *(optional)* admin email, default `admin@waslah.com` |
 | `APP_BASE_URL` | *(optional)* public address used in email links, default `http://localhost:8080` |
 
-macOS / Linux:
-```bash
-export DB_PASSWORD='your-db-password'
-export JWT_SECRET='replace-with-a-long-random-string-of-32+chars'
-export MAIL_USERNAME='you@gmail.com'
-export MAIL_APP_PASSWORD='your-gmail-app-password'
-export ADMIN_PASSWORD='choose-a-strong-admin-password'
 ```
 
 Windows (PowerShell):
@@ -674,25 +662,8 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 | User details / role authority | `MyUserDetailsTest` | 1 |
 | Application context loads (`test` profile) | `WaslahApplicationTests` | 1 |
 
-Not covered yet: café ownership rules, job applications and role-based access through the HTTP layer — see [Unsolved Problems](#unsolved-problems).
-
 ---
 
-## Unsolved Problems
-
-Known gaps and limitations in the current version, most important first:
-
-- **Emails are limited to verification and password reset.** There are no booking-status emails; booking updates reach users only through SSE. Emails need working SMTP credentials — there is no console fallback.
-- **Notifications are partial.** Booking events are pushed, but job-application decisions and role-request decisions send nothing. Connections are held in memory on one server (no heartbeat, no Redis/broker).
-- **Demo credentials in code.** The demo café-manager password is written in `DataLoader` (the admin password is not — it comes from `ADMIN_PASSWORD`).
-- **Audit coverage is nearly complete.** Not logged: logins, password changes, profile edits.
-- **Profile pictures:** only the owner can download their own picture, and the profile endpoints return the `UserProfile` entity directly instead of a DTO. A profile must be created (`PUT /api/profile`) before an image can be uploaded.
-- **Test coverage is incomplete.** 30 tests; nothing covers café ownership rules, job applications or HTTP-level authorization (`MockMvc`).
-- **Rate limiting is in memory** and keyed on the client IP, so counters reset on restart and clients behind one proxy share a limit. Opening the reset link (`GET /auth/reset-password`) counts toward the same limit of 3 per minute.
-- **Account enumeration.** Login answers `400` for an unknown username but `401` for a wrong password, and forgot-password answers `404` for an unknown email.
-- **Housekeeping.** The `prod` profile still uses `ddl-auto=update` and `show-sql=true`; user deactivation exists on two routes (`/api/users/{id}` and `/api/admin/users/{id}`); the project and Trello links in this README still need to be filled in.
-
----
 
 ## Major Challenges
 
@@ -709,14 +680,6 @@ Known gaps and limitations in the current version, most important first:
 ---
 
 ## Future Improvements
-
-- Add booking-status **emails** and notifications for job-application and role-request decisions
-- Move the demo café-manager credentials out of source code
-- Log logins, password changes and profile edits in the audit log
-- Return DTOs from the profile endpoints and let other users see a profile picture
-- Add tests for café ownership, job applications and role-based access (`MockMvc`), plus a Testcontainers/PostgreSQL integration test
-- Use a shared rate-limit store and SSE broker so the API can run on more than one instance
-- Add refresh tokens and token revocation; return the same response for unknown and wrong credentials
 - Add a **frontend** and an admin dashboard
 
 ---
@@ -731,5 +694,4 @@ Known gaps and limitations in the current version, most important first:
 | springdoc-openapi | https://springdoc.org/ | Swagger UI / OpenAPI generation |
 | PostgreSQL Documentation | https://www.postgresql.org/docs/ | Database setup and SQL |
 | Project Lombok | https://projectlombok.org/ | Reducing boilerplate in entities and services |
-| Claude (Anthropic) | https://claude.ai | Drafting and structuring this README from the project source and requirements |
-| *[add any tutorials, Stack Overflow answers, classmates or instructors who helped]* | | |
+| Claude (Anthropic) | https://claude.ai | Drafting and structuring this README from the project source and requirements | | |
