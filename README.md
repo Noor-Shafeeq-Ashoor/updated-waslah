@@ -28,7 +28,7 @@ A secure Spring Boot REST API that connects people to **work opportunities** and
 
 ## Project Information
 
-**Title:** WASLAH (وصلة) API
+**Title:** WASLAH API
 
 **Description:** WASLAH is a backend platform with two connected halves:
 
@@ -218,7 +218,7 @@ Status codes used: `200`, `201`, `204`, `400`, `401`, `403`, `404`, `409`, `429`
 
 User stories are documented in [`USER STORY.md`](./USER%20STORY.md).
 
-Trello board: **[add Trello user-stories board link here]**
+
 
 ---
 
