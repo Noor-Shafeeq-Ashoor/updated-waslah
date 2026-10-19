@@ -19,10 +19,9 @@ A secure Spring Boot REST API that connects people to **work opportunities** and
 9. [API Documentation](#api-documentation)
 10. [Installation](#installation)
 11. [Testing](#testing)
-12. [Unsolved Problems](#unsolved-problems)
-13. [Major Challenges](#major-challenges)
-14. [Future Improvements](#future-improvements)
-15. [Credits & External Resources](#credits--external-resources)
+12. [Major Challenges](#major-challenges)
+13. [Future Improvements](#future-improvements)
+14. [Credits & External Resources](#credits--external-resources)
 
 ---
 
@@ -381,7 +380,7 @@ Once the application is running:
 | Swagger UI | <http://localhost:8080/swagger-ui/index.html> |
 | OpenAPI JSON | <http://localhost:8080/v3/api-docs> |
 
-To call protected endpoints from Swagger UI: `POST /auth/login` → copy the `token` from the response → click **Authorize** → paste the token (without `Bearer `) → run requests. Public endpoints show no lock icon; every endpoint lists its possible status codes and the roles it needs.
+\
 
 ### Authentication
 
@@ -604,16 +603,30 @@ Never commit real secrets to GitHub.
 
 ### 5. Seed the database
 
-Seeding is automatic: on startup `DataLoader` creates the following if they don't exist.
+Seeding is automatic: on startup, `DataLoader` checks for existing records and creates default development data if it does not already exist.
 
-| Seeded data | Details |
-|---|---|
-| Admin account | username `admin` (or `ADMIN_USERNAME`), password from `ADMIN_PASSWORD`, email already verified — created **only if `ADMIN_PASSWORD` is set**; nothing is hard-coded |
-| Café manager account | username `cafe.manager`, password `Cafe@12345` (demo only, email already verified) |
-| Café 1 | *Bahrain Study Cafe* (Manama) — Quiet Desk 1, Quiet Desk 2, Group Room |
-| Café 2 | *WASLAH Workspace Cafe* (Seef) — Individual Desk, Meeting Room |
+#### Seeded Data Overview
 
-Start the app once with `ADMIN_PASSWORD` set, then log in with `POST /auth/login` as the admin. If the admin variables were not set at the first start, set them and restart — seeding only skips accounts that already exist. (Alternative for an existing account: `UPDATE users SET role = 'ADMIN' WHERE username = 'your-username';`.)
+| Seeded Entity / Account | Identifier / Username | Role / Location | Details & Associated Spaces |
+| :--- | :--- | :--- | :--- |
+| **Admin Account** | `admin` *(or `ADMIN_USERNAME`)* | `ADMIN` | Created only if `ADMIN_PASSWORD` is set (at least 8 characters); email verified. |
+| **Demo User Account** | `demo.user` | `USER` | Created if `app.seed.demo-user-password` is set; email verified. |
+| **Café Manager Account** | `cafe.manager` | `CAFE_MANAGER` | Created if `app.seed.cafe-manager-password` is set; email verified. |
+| **Bahrain Study Cafe** | `Bahrain Study Cafe` | Manama, Bahrain | **Spaces:** Quiet Desk 1, Quiet Desk 2, Group Room |
+| **WASLAH Workspace Cafe** | `WASLAH Workspace Cafe` | Seef, Bahrain | **Spaces:** Individual Desk, Meeting Room |
+| **Sample Booking** | — | `CONFIRMED` | Automatically created for `demo.user` at *Quiet Desk 1* (scheduled 2 days in the future for 2 hours). |
+
+---
+
+#### Instructions for Use
+
+1. **Configure Properties / Environment Variables:**
+   Ensure `ADMIN_PASSWORD` (or `app.admin.password`), `app.seed.demo-user-password`, and `app.seed.cafe-manager-password` are configured before startup.
+2. **Start the Application:**
+   Run the Spring Boot application once. `DataLoader` will populate the database automatically.
+3. **Authenticate:**
+   Send a `POST /auth/login` request using your configured admin or user credentials.
+
 
 ### 6. Start the application
 
@@ -693,5 +706,4 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 | jjwt (JSON Web Token for Java) | https://github.com/jwtk/jjwt | Generating and validating JWTs |
 | springdoc-openapi | https://springdoc.org/ | Swagger UI / OpenAPI generation |
 | PostgreSQL Documentation | https://www.postgresql.org/docs/ | Database setup and SQL |
-| Project Lombok | https://projectlombok.org/ | Reducing boilerplate in entities and services |
-| Claude (Anthropic) | https://claude.ai | Drafting and structuring this README from the project source and requirements | | |
+| Project Lombok | https://projectlombok.org/ | Reducing boilerplate in entities and services | | |
