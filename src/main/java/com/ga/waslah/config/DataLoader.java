@@ -1,15 +1,36 @@
 package com.ga.waslah.config;
 
-import com.ga.waslah.model.*;
+import com.ga.waslah.model.Booking;
+import com.ga.waslah.model.BookingStatus;
+import com.ga.waslah.model.Cafe;
+import com.ga.waslah.model.Role;
+import com.ga.waslah.model.StudySpace;
+import com.ga.waslah.model.User;
+import com.ga.waslah.model.UserProfile;
+import com.ga.waslah.model.UserStatus;
+import com.ga.waslah.repository.BookingRepository;
 import com.ga.waslah.repository.CafeRepository;
 import com.ga.waslah.repository.StudySpaceRepository;
 import com.ga.waslah.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * Seeds initial development data so the application can be demonstrated
+ * without manually creating every user, cafe, study space, and booking.
+ *
+ * <p>The seeding methods check for existing records before inserting them,
+ * so restarting the application does not repeatedly duplicate the seed data.</p>
+ *
+ * <p>Demo passwords should be configured only for local development.
+ * Do not use the development credentials in a deployed environment.</p>
+ */
 @Slf4j
 @Component
 public class DataLoader implements CommandLineRunner {
@@ -17,169 +38,118 @@ public class DataLoader implements CommandLineRunner {
     private final UserRepository userRepository;
     private final CafeRepository cafeRepository;
     private final StudySpaceRepository studySpaceRepository;
+    private final BookingRepository bookingRepository;
     private final PasswordEncoder passwordEncoder;
+
     private final String adminUsername;
     private final String adminEmail;
     private final String adminPassword;
+    private final String demoUserPassword;
+    private final String cafeManagerPassword;
 
     public DataLoader(
             UserRepository userRepository,
             CafeRepository cafeRepository,
             StudySpaceRepository studySpaceRepository,
+            BookingRepository bookingRepository,
             PasswordEncoder passwordEncoder,
             @Value("${app.admin.username:admin}") String adminUsername,
             @Value("${app.admin.email:admin@waslah.com}") String adminEmail,
-            @Value("${app.admin.password:}") String adminPassword
+            @Value("${app.admin.password:}") String adminPassword,
+            @Value("${app.seed.demo-user-password:}") String demoUserPassword,
+            @Value("${app.seed.cafe-manager-password:}") String cafeManagerPassword
     ) {
         this.userRepository = userRepository;
         this.cafeRepository = cafeRepository;
         this.studySpaceRepository = studySpaceRepository;
+        this.bookingRepository = bookingRepository;
         this.passwordEncoder = passwordEncoder;
         this.adminUsername = adminUsername;
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
-    }
-
-    @Override
-    public void run(String... args) {
-
-        // =========================
-        // CREATE ADMIN (from environment)
-        // =========================
-
-        seedAdmin();
-
-        // =========================
-        // CREATE CAFE MANAGER
-        // =========================
-
-        User manager = userRepository
-                .findByUsername("cafe.manager")
-                .orElseGet(() -> {
-
-                    User newManager = new User();
-
-                    newManager.setUsername("cafe.manager");
-                    newManager.setEmail("cafe.manager@waslah.com");
-                    newManager.setPassword(
-                            passwordEncoder.encode("Cafe@12345")
-                    );
-                    newManager.setRole(Role.CAFE_MANAGER);
-                    newManager.setStatus(UserStatus.ACTIVE);
-                    newManager.setEmailVerified(true);
-
-                    return userRepository.save(newManager);
-                });
-
-        // =========================
-        // CREATE FIRST CAFE
-        // =========================
-
-        Cafe firstCafe;
-
-        if (cafeRepository.findByManager(manager).isEmpty()) {
-
-            firstCafe = new Cafe();
-
-            firstCafe.setName("Bahrain Study Cafe");
-            firstCafe.setDescription(
-                    "A quiet study cafe with comfortable spaces for individual and group work."
-            );
-            firstCafe.setLocation("Manama, Bahrain");
-            firstCafe.setActive(true);
-            firstCafe.setManager(manager);
-
-            firstCafe = cafeRepository.save(firstCafe);
-
-            // Quiet Desk 1
-            StudySpace space1 = new StudySpace();
-            space1.setName("Quiet Desk 1");
-            space1.setCapacity(1);
-            space1.setPricePerHour(2.0);
-            space1.setAvailable(true);
-            space1.setCafe(firstCafe);
-
-            // Quiet Desk 2
-            StudySpace space2 = new StudySpace();
-            space2.setName("Quiet Desk 2");
-            space2.setCapacity(1);
-            space2.setPricePerHour(2.0);
-            space2.setAvailable(true);
-            space2.setCafe(firstCafe);
-
-            // Group Room
-            StudySpace space3 = new StudySpace();
-            space3.setName("Group Room");
-            space3.setCapacity(6);
-            space3.setPricePerHour(8.0);
-            space3.setAvailable(true);
-            space3.setCafe(firstCafe);
-
-            studySpaceRepository.save(space1);
-            studySpaceRepository.save(space2);
-            studySpaceRepository.save(space3);
-        }
-
-        // =========================
-        // CREATE SECOND CAFE
-        // =========================
-
-        if (cafeRepository.findByManager(manager).size() < 2) {
-
-            Cafe secondCafe = new Cafe();
-
-            secondCafe.setName("WASLAH Workspace Cafe");
-            secondCafe.setDescription(
-                    "A flexible workspace for students, freelancers, and professionals."
-            );
-            secondCafe.setLocation("Seef, Bahrain");
-            secondCafe.setActive(true);
-            secondCafe.setManager(manager);
-
-            secondCafe = cafeRepository.save(secondCafe);
-
-            // Individual Desk
-            StudySpace space4 = new StudySpace();
-            space4.setName("Individual Desk");
-            space4.setCapacity(1);
-            space4.setPricePerHour(3.0);
-            space4.setAvailable(true);
-            space4.setCafe(secondCafe);
-
-            // Meeting Room
-            StudySpace space5 = new StudySpace();
-            space5.setName("Meeting Room");
-            space5.setCapacity(8);
-            space5.setPricePerHour(10.0);
-            space5.setAvailable(true);
-            space5.setCafe(secondCafe);
-
-            studySpaceRepository.save(space4);
-            studySpaceRepository.save(space5);
-        }
+        this.demoUserPassword = demoUserPassword;
+        this.cafeManagerPassword = cafeManagerPassword;
     }
 
     /**
-     * Creates the administrator account once, using ADMIN_USERNAME,
-     * ADMIN_EMAIL and ADMIN_PASSWORD. Nothing is created when
-     * ADMIN_PASSWORD is not set or is shorter than 8 characters,
-     * so no default admin password exists in the source code.
+     * Runs the seed steps when the Spring Boot application starts.
+     *
+     * @param args command-line arguments supplied to the application
+     */
+    @Override
+    public void run(String... args) {
+        seedAdmin();
+
+        User demoUser = seedUser(
+                "demo.user",
+                "demo.user@waslah.com",
+                demoUserPassword,
+                Role.USER,
+                "Demo",
+                "User"
+        );
+
+        User cafeManager = seedUser(
+                "cafe.manager",
+                "cafe.manager@waslah.com",
+                cafeManagerPassword,
+                Role.CAFE_MANAGER,
+                "Cafe",
+                "Manager"
+        );
+
+        if (cafeManager == null) {
+            log.warn("Cafe seed data skipped: configure app.seed.cafe-manager-password.");
+            return;
+        }
+
+        Cafe manamaCafe = seedCafe(
+                cafeManager,
+                "Bahrain Study Cafe",
+                "A quiet study cafe with comfortable spaces for individual and group work.",
+                "Manama, Bahrain"
+        );
+
+        Cafe seefCafe = seedCafe(
+                cafeManager,
+                "WASLAH Workspace Cafe",
+                "A flexible workspace for students, freelancers, and professionals.",
+                "Seef, Bahrain"
+        );
+
+        StudySpace quietDesk1 = seedStudySpace(manamaCafe, "Quiet Desk 1", 1, 2.0);
+        seedStudySpace(manamaCafe, "Quiet Desk 2", 1, 2.0);
+        seedStudySpace(manamaCafe, "Group Room", 6, 8.0);
+        seedStudySpace(seefCafe, "Individual Desk", 1, 3.0);
+        seedStudySpace(seefCafe, "Meeting Room", 8, 10.0);
+
+        if (demoUser != null && quietDesk1 != null) {
+            seedBooking(demoUser, quietDesk1);
+        } else {
+            log.warn("Sample booking skipped: configure app.seed.demo-user-password.");
+        }
+
+        log.info("WASLAH seed-data initialization completed.");
+    }
+
+    /**
+     * Creates the administrator account once, using configured credentials.
+     * The password must be at least eight characters and is never hardcoded
+     * in this class.
      */
     private void seedAdmin() {
-
         if (adminPassword == null || adminPassword.length() < 8) {
-            log.warn("No admin created: set ADMIN_PASSWORD "
-                    + "(at least 8 characters) to seed an admin account");
+            log.warn("Admin not seeded: set ADMIN_PASSWORD to at least 8 characters.");
             return;
         }
 
         if (userRepository.existsByUsername(adminUsername)
                 || userRepository.existsByEmail(adminEmail)) {
+            log.info("Admin seed skipped because the username or email already exists.");
             return;
         }
 
         User admin = new User();
-
         admin.setUsername(adminUsername);
         admin.setEmail(adminEmail);
         admin.setPassword(passwordEncoder.encode(adminPassword));
@@ -188,7 +158,155 @@ public class DataLoader implements CommandLineRunner {
         admin.setEmailVerified(true);
 
         userRepository.save(admin);
+        log.info("Admin account '{}' created.", adminUsername);
+    }
 
-        log.info("Admin account '{}' created", adminUsername);
+    /**
+     * Finds a seed user by username or email, or creates it if missing.
+     * Existing accounts are not overwritten or assigned a new password.
+     *
+     * @param username unique username for the seed account
+     * @param email unique email for the seed account
+     * @param rawPassword configured password for a new account
+     * @param role role assigned to a newly created account
+     * @param firstName profile first name
+     * @param lastName profile last name
+     * @return the existing or newly created user, or {@code null} if the
+     * password is not configured or an email already belongs to another user
+     */
+    private User seedUser(
+            String username,
+            String email,
+            String rawPassword,
+            Role role,
+            String firstName,
+            String lastName
+    ) {
+        User existing = userRepository.findByUsername(username).orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+
+        existing = userRepository.findByEmail(email).orElse(null);
+        if (existing != null) {
+            log.warn("Seed user '{}' skipped because its email already belongs to another account.", username);
+            return null;
+        }
+
+        if (rawPassword == null || rawPassword.length() < 8) {
+            log.warn("Seed user '{}' skipped: configure a password of at least 8 characters.", username);
+            return null;
+        }
+
+        User user = new User();
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setPassword(passwordEncoder.encode(rawPassword));
+        user.setRole(role);
+        user.setStatus(UserStatus.ACTIVE);
+        user.setEmailVerified(true);
+
+        UserProfile profile = new UserProfile();
+        profile.setFirstName(firstName);
+        profile.setLastName(lastName);
+        profile.setBio("WASLAH demonstration account");
+        profile.setLocation("Bahrain");
+        user.setUserProfile(profile);
+
+        User savedUser = userRepository.save(user);
+        log.info("Seed user '{}' created with role {}.", username, role);
+        return savedUser;
+    }
+
+    /**
+     * Finds a cafe belonging to the specified manager or creates it.
+     *
+     * @param manager user who manages the cafe
+     * @param name cafe name used to identify the seed record
+     * @param description cafe description
+     * @param location cafe location
+     * @return the existing or newly created cafe
+     */
+    private Cafe seedCafe(User manager, String name, String description, String location) {
+        List<Cafe> managedCafes = cafeRepository.findByManager(manager);
+
+        for (Cafe cafe : managedCafes) {
+            if (name.equalsIgnoreCase(cafe.getName())) {
+                return cafe;
+            }
+        }
+
+        Cafe cafe = new Cafe();
+        cafe.setName(name);
+        cafe.setDescription(description);
+        cafe.setLocation(location);
+        cafe.setActive(true);
+        cafe.setManager(manager);
+
+        Cafe savedCafe = cafeRepository.save(cafe);
+        log.info("Seed cafe '{}' created.", name);
+        return savedCafe;
+    }
+
+    /**
+     * Finds a study space by its cafe and name, or creates it.
+     *
+     * @param cafe cafe that owns the study space
+     * @param name study-space name
+     * @param capacity maximum number of people
+     * @param pricePerHour hourly price in the application's configured currency
+     * @return the existing or newly created study space
+     */
+    private StudySpace seedStudySpace(Cafe cafe, String name, int capacity, double pricePerHour) {
+        for (StudySpace space : studySpaceRepository.findAll()) {
+            if (space.getCafe() != null
+                    && cafe.getId().equals(space.getCafe().getId())
+                    && name.equalsIgnoreCase(space.getName())) {
+                return space;
+            }
+        }
+
+        StudySpace space = new StudySpace();
+        space.setName(name);
+        space.setCapacity(capacity);
+        space.setPricePerHour(pricePerHour);
+        space.setAvailable(true);
+        space.setCafe(cafe);
+
+        StudySpace savedSpace = studySpaceRepository.save(space);
+        log.info("Seed study space '{}' created for cafe '{}'.", name, cafe.getName());
+        return savedSpace;
+    }
+
+    /**
+     * Creates one future confirmed booking for the demo user if they have
+     * no existing bookings. The booking is placed two days in the future.
+     *
+     * @param user demo user who owns the booking
+     * @param studySpace study space being booked
+     */
+    private void seedBooking(User user, StudySpace studySpace) {
+        if (!bookingRepository.findByUser_Username(user.getUsername()).isEmpty()) {
+            log.info("Sample booking skipped because user '{}' already has a booking.", user.getUsername());
+            return;
+        }
+
+        LocalDateTime start = LocalDateTime.now()
+                .plusDays(2)
+                .withHour(10)
+                .withMinute(0)
+                .withSecond(0)
+                .withNano(0);
+
+        Booking booking = new Booking();
+        booking.setUser(user);
+        booking.setStudySpace(studySpace);
+        booking.setStartTime(start);
+        booking.setEndTime(start.plusHours(2));
+        booking.setStatus(BookingStatus.CONFIRMED);
+
+        bookingRepository.save(booking);
+        log.info("Sample booking created for user '{}' at '{}'.",
+                user.getUsername(), studySpace.getName());
     }
 }
