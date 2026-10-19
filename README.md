@@ -706,5 +706,4 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 | jjwt (JSON Web Token for Java) | https://github.com/jwtk/jjwt | Generating and validating JWTs |
 | springdoc-openapi | https://springdoc.org/ | Swagger UI / OpenAPI generation |
 | PostgreSQL Documentation | https://www.postgresql.org/docs/ | Database setup and SQL |
-| Project Lombok | https://projectlombok.org/ | Reducing boilerplate in entities and services |
-| Claude (Anthropic) | https://claude.ai | Drafting and structuring this README from the project source and requirements | | |
+| Project Lombok | https://projectlombok.org/ | Reducing boilerplate in entities and services | | |
