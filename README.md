@@ -380,7 +380,7 @@ Once the application is running:
 | Swagger UI | <http://localhost:8080/swagger-ui/index.html> |
 | OpenAPI JSON | <http://localhost:8080/v3/api-docs> |
 
-To call protected endpoints from Swagger UI: `POST /auth/login` → copy the `token` from the response → click **Authorize** → paste the token (without `Bearer `) → run requests. Public endpoints show no lock icon; every endpoint lists its possible status codes and the roles it needs.
+\
 
 ### Authentication
 
