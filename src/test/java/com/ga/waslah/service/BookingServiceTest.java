@@ -127,6 +127,7 @@ class BookingServiceTest {
         when(userRepository.findByUsername("noor")).thenReturn(Optional.of(user));
         when(studySpaceRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(space));
         when(bookingRepository
+
                 .existsByStudySpaceAndStatusInAndStartTimeLessThanAndEndTimeGreaterThan(
                         eq(space), anyList(), eq(end), eq(start)))
                 .thenReturn(true);

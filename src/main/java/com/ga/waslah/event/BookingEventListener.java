@@ -16,19 +16,13 @@ public class BookingEventListener {
 
     /**
      * Creates the listener with the required notification service.
-     *
-     * @param notificationService service used to deliver notifications
-     */
+    */
     public BookingEventListener(NotificationService notificationService) {
         this.notificationService = notificationService;
     }
 
-    /**
-     * Notifies the booking owner and cafe manager after a booking
-     * has been committed successfully.
-     *
-     * @param event the event containing the booking and recipient details
-     */
+    //Notifies the booking owner and cafe manager after a booking has been committed successfully.
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleBookingCreated(BookingCreatedEvent event) {
         String message = "A new booking has been created. Booking ID: "

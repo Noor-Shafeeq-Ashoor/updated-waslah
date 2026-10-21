@@ -16,18 +16,12 @@ public interface BookingRepository extends
 
     /**
      * Finds all bookings belonging to a user.
-     *
-     * @param username the username of the booking owner
-     * @return the user's bookings
-     */
+  */
     List<Booking> findByUser_Username(String username);
 
     /**
      * Finds all bookings for a specific study space.
-     *
-     * @param studySpace the study space associated with the bookings
-     * @return the bookings for that study space
-     */
+  */
     List<Booking> findByStudySpace(StudySpace studySpace);
 
     /**
@@ -43,10 +37,7 @@ public interface BookingRepository extends
 
     /**
      * Finds bookings for study spaces managed by a particular user.
-     *
-     * @param username the username of the cafe manager
-     * @return bookings associated with cafes managed by that user
-     */
+   */
     List<Booking> findByStudySpace_Cafe_Manager_Username(String username);
 
     List<Booking> findByStatusAndEndTimeLessThan(
