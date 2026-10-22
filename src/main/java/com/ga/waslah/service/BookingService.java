@@ -20,6 +20,7 @@ import org.springframework.data.jpa.domain.Specification;
 import com.ga.waslah.event.BookingCreatedEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import com.ga.waslah.exception.ConflictException;
+import com.ga.waslah.exception.ConflictException;
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -223,7 +224,7 @@ public class BookingService {
         if (!studySpace.getAvailable()) {
             log.warn("Booking rejected: study space is unavailable");
 
-            throw new ForbiddenException(
+            throw new ConflictException(
                     "This study space is not available"
             );
         }
@@ -344,7 +345,7 @@ public class BookingService {
         if (booking.getStatus() == BookingStatus.COMPLETED) {
             log.warn("Booking cancellation rejected: booking is completed");
 
-            throw new ForbiddenException(
+            throw new ConflictException(
                     "Completed bookings cannot be cancelled"
             );
         }
@@ -353,7 +354,7 @@ public class BookingService {
         if (booking.getStatus() == BookingStatus.CANCELLED) {
             log.warn("Booking cancellation rejected: already cancelled");
 
-            throw new ForbiddenException(
+            throw new ConflictException(
                     "Booking is already cancelled"
             );
         }
