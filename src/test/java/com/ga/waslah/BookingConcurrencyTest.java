@@ -95,8 +95,8 @@ class BookingConcurrencyTest {
                     ? responseB.statusCode()
                     : responseA.statusCode();
 
-            assertEquals(400, rejectedStatus,
-                    "Overlapping booking should return 400");
+            assertEquals(409, rejectedStatus,
+                    "Overlapping booking should return 409");
 
         } finally {
             executor.shutdownNow();

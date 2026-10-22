@@ -19,6 +19,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import com.ga.waslah.event.BookingCreatedEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import com.ga.waslah.exception.ConflictException;
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -239,13 +240,17 @@ public class BookingService {
                                 request.getStartTime()
                         );
 
+
         if (alreadyBooked) {
+            // A valid booking request conflicts with an existing reservation.
+            // HTTP 409 is more appropriate than HTTP 400.
             log.warn("Booking rejected: time slot conflict");
 
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "This study space is already booked for the selected time"
             );
         }
+
 
         Booking booking = new Booking();
         booking.setUser(user);
