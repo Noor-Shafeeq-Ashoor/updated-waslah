@@ -44,10 +44,7 @@ public class BookingController {
      * notification to the user who attempted the booking.
      * The exception is rethrown so the application's normal
      * error handling can process the failed request.
-     * @param request booking details
-     * @param authentication authenticated user's security information
-     * @return the created booking with HTTP status 201
-     */
+   */
     @Operation(
             summary = "Create a booking",
             description = "Creates a PENDING booking. Rejected when end is not after start, the space is unavailable, or the slot overlaps a PENDING/CONFIRMED booking (the study space row is locked during the check to prevent double booking). Triggers a real-time notification and an audit-log entry."

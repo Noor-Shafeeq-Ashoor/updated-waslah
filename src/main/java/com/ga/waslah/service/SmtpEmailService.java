@@ -5,7 +5,7 @@ package com.ga.waslah.service;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
-import org.springframework.context.annotation.Profile;
+
 
 /**
  * Sends real verification and password-reset emails using SMTP.
