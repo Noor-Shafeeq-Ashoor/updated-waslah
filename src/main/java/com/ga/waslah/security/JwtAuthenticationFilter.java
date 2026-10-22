@@ -33,13 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /**
      * Extracts and validates the JWT before setting the security context.
-     *
-     * @param request incoming HTTP request
-     * @param response HTTP response
-     * @param filterChain chain of security filters
-     * @throws ServletException if a servlet-related error occurs
-     * @throws IOException if an input/output error occurs
-     */
+ */
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
@@ -69,13 +63,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (SecurityContextHolder.getContext().getAuthentication() == null) {
 
+
                 UserDetails userDetails =
                         userDetailsService.loadUserByUsername(username);
 
+               // Reject tokens belonging to deactivated accounts.
+               // The user is loaded from the database on each authenticated request.
+                if (!userDetails.isEnabled()) {log.warn("JWT rejected: user account is inactive");
+                    rejectInvalidToken(response);
+                    return;
+                }
+
+               // Validate the token signature, username, and expiration.
                 if (!jwtService.isTokenValid(token, userDetails)) {
                     rejectInvalidToken(response);
                     return;
                 }
+
 
                 // Set the authenticated user and their granted authorities.
                 UsernamePasswordAuthenticationToken authentication =
@@ -114,12 +118,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /**
-     * Clears any existing authentication and returns a generic 401 response.
-     *
-     * @param response HTTP response to update
-     * @throws IOException if writing the response fails
-     */
+    //Clears any existing authentication and returns a generic 401 response.
+
     private void rejectInvalidToken(
             HttpServletResponse response
     ) throws IOException {
