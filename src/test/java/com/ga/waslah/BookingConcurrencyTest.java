@@ -16,23 +16,14 @@ class BookingConcurrencyTest {
     private static final String BOOKING_URL =
             "http://localhost:8080/api/bookings";
 
-    /**
-     * Reads JWTs from environment variables so that
-     * authentication secrets are not stored in source code.
-     */
+
     private static final String TOKEN_A =
             System.getenv("WASLAH_TEST_TOKEN_A");
 
     private static final String TOKEN_B =
             System.getenv("WASLAH_TEST_TOKEN_B");
 
-    /**
-     * Tests two concurrent booking requests for the
-     * same study space and time slot.
-     *
-     * Requires the WASLAH application to be running
-     * and the selected time slot to be available.
-     */
+
     @Test
     void shouldPreventDoubleBooking() throws Exception {
 
@@ -112,10 +103,7 @@ class BookingConcurrencyTest {
         }
     }
 
-    /**
-     * Sends an authenticated HTTP booking request.
-     * Both threads wait for the shared start signal.
-     */
+
     private HttpResponse<String> sendBooking(
             HttpClient client,
             String token,
