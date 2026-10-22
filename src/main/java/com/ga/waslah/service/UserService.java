@@ -10,6 +10,7 @@ import com.ga.waslah.model.User;
 import com.ga.waslah.model.UserStatus;
 import com.ga.waslah.repository.UserRepository;
 
+import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,7 @@ public class UserService {
      * @return the saved user
      * @throws ConflictException if the username or email already exists
      */
+    @Transactional
     public User register(RegisterRequest request) {
 
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -89,12 +91,7 @@ public class UserService {
 
     /**
      * Deactivates a user account and logs who performed the action.
-     *
-     * @param userId ID of the account to deactivate
-     * @param performedBy username of the authenticated administrator
-     * @throws ResourceNotFoundException if the target user does not exist
-     * @throws ConflictException if the account is already inactive
-     */
+ */
     public void deactivateUser(Long userId, String performedBy) {
 
         User user = userRepository.findById(userId)
