@@ -27,7 +27,10 @@ public class BookingEventListener {
      */
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+
     public void handleBookingCreated(BookingCreatedEvent event) {
+        log.info("BOOKING NOTIFICATION - Running on thread: {}",
+                Thread.currentThread().getName());
 
         // Log the thread processing the notification.
         log.info(

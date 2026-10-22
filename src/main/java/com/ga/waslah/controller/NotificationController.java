@@ -23,19 +23,10 @@ public class NotificationController {
 
     private final NotificationService notificationService;
 
-    /**
-     * Creates the controller with the notification service.
-     * @param notificationService service that manages SSE connections
-     */
     public NotificationController(NotificationService notificationService) {
         this.notificationService = notificationService;
     }
 
-    /**
-     * Opens an SSE stream for the currently authenticated user.
-     * @param authentication security context of the authenticated user
-     * @return an SSE emitter for delivering real-time notifications
-     */
     @Operation(
             summary = "Subscribe to real-time notifications (SSE)",
             description = "Opens a long-lived text/event-stream for the authenticated user. Events: BOOKING_CREATED (to the booker and the café manager) and BOOKING_FAILED (to the booker). Send the JWT in the Authorization header; browsers' native EventSource cannot set headers, so use fetch/EventSource polyfills. Swagger UI does not render live streams."
