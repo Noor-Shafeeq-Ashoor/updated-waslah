@@ -136,13 +136,14 @@ public class StudySpaceService {
      * @return the study space response
      */
     private StudySpaceResponse toResponse(StudySpace studySpace) {
+
         return new StudySpaceResponse(
                 studySpace.getId(),
                 studySpace.getName(),
                 studySpace.getCapacity(),
                 studySpace.getPricePerHour(),
-                studySpace.getCafe().getName(),
-                studySpace.getCafe().getLocation()
+                studySpace.getAvailable(),
+                studySpace.getCafe().getId()
         );
     }
 }

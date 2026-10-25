@@ -1,16 +1,16 @@
+
 package com.ga.waslah.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-
-@Getter
-@AllArgsConstructor
-public class StudySpaceResponse {
-
-    private Long id;
-    private String name;
-    private Integer capacity;
-    private Double pricePerHour;
-    private String cafeName;
-    private String location;
+/**
+ * Safe response DTO for study-space management.
+ * Prevents returning JPA entities directly to clients.
+ */
+public record StudySpaceResponse(
+        Long id,
+        String name,
+        Integer capacity,
+        Double pricePerHour,
+        Boolean available,
+        Long cafeId
+) {
 }
