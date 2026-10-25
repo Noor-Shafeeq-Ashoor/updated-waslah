@@ -9,6 +9,7 @@ import com.ga.waslah.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.core.io.Resource;
+import com.ga.waslah.dto.UserProfileResponse;
 
 @Service
 public class UserProfileService {
@@ -119,5 +120,19 @@ public class UserProfileService {
                 profile.getProfileImage()
         );
     }
+
+    public UserProfileResponse toResponse(UserProfile profile) {
+
+        return new UserProfileResponse(
+                profile.getId(),
+                profile.getFirstName(),
+                profile.getLastName(),
+                profile.getPhone(),
+                profile.getBio(),
+                profile.getLocation(),
+                profile.getProfileImage()
+        );
+    }
+
 
 }

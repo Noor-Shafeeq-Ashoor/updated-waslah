@@ -99,6 +99,7 @@ public class AdminEmployerRequestController {
     private EmployerRequestResponse toDTO(EmployerRequest request) {
 
         return new EmployerRequestResponse(
+                request.getId(),
                 request.getCompanyName(),
                 request.getCompanyDescription(),
                 request.getJobTypes(),

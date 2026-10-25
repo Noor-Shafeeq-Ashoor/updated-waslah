@@ -9,6 +9,7 @@ import com.ga.waslah.model.Role;
 import com.ga.waslah.model.User;
 import com.ga.waslah.repository.EmployerRequestRepository;
 import com.ga.waslah.repository.UserRepository;
+import com.ga.waslah.dto.EmployerRequestResponse;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,20 +34,6 @@ public class EmployerRequestService {
     private final UserRepository userRepository;
     private final AuditService auditService;
 
-    /**
-     * Submits an employer request for an existing user.
-     *
-     * A user cannot submit another request while one is pending
-     * or after a request has been approved. A rejected request
-     * may be replaced with a new request.
-     *
-     * @param username the username of the requesting user
-     * @param request the company details submitted for approval
-     * @return the saved employer request
-     * @throws ResourceNotFoundException if the user does not exist
-     * @throws ConflictException if the user is already an employer
-     *         or has a pending or approved request
-     */
     @Transactional
     public EmployerRequest createRequest(
             String username,
@@ -255,4 +242,20 @@ public class EmployerRequestService {
 
         return rejectedRequest;
     }
+
+    /**
+     * Converts an employer request entity into a response DTO.
+     */
+    public EmployerRequestResponse toResponse(EmployerRequest request) {
+
+        return new EmployerRequestResponse(
+                request.getId(),
+                request.getCompanyName(),
+                request.getCompanyDescription(),
+                request.getJobTypes(),
+                request.getCommercialRegistration(),
+                request.getStatus()
+        );
+    }
+
 }
