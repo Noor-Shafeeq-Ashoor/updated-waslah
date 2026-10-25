@@ -14,8 +14,7 @@ import java.time.LocalDateTime;
  * The capacity must never exceed the study space's capacity.
  */
 @Entity
-@Table(
-        name = "study_sessions",
+@Table( name = "study_sessions",
         uniqueConstraints = {
                 @UniqueConstraint(
                         name = "uk_study_session_booking",
