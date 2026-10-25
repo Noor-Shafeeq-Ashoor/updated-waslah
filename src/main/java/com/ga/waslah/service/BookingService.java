@@ -409,4 +409,58 @@ public class BookingService {
                 booking.getCreatedAt()
         );
     }
+
+    /**
+     * Confirms a pending booking.
+     * Only the assigned cafe manager can confirm it.
+  */
+    @Transactional
+    public BookingResponse confirmBooking(
+            Long bookingId,
+            String managerUsername
+    ) {
+
+        // Retrieve and lock the booking.
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Booking not found")
+                );
+
+        // Check that the authenticated user manages this cafe.
+        String assignedManager = booking.getStudySpace()
+                .getCafe()
+                .getManager()
+                .getUsername();
+
+        if (!assignedManager.equals(managerUsername)) {
+            throw new ForbiddenException(
+                    "You are not allowed to confirm this booking"
+            );
+        }
+
+        // Only PENDING bookings can become CONFIRMED.
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new ConflictException(
+                    "Only pending bookings can be confirmed"
+            );
+        }
+
+        // Update booking status.
+        booking.setStatus(BookingStatus.CONFIRMED);
+
+        Booking savedBooking = bookingRepository.save(booking);
+
+        // Record the confirmation.
+        auditService.log(
+                managerUsername,
+                "BOOKING_CONFIRMED",
+                "BOOKING",
+                savedBooking.getId()
+        );
+
+        log.info("Booking confirmed: id={}", savedBooking.getId());
+
+        return toResponse(savedBooking);
+    }
+
 }

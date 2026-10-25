@@ -144,6 +144,34 @@ public class BookingController {
         );
     }
 
+
+    @Operation(
+            summary = "Confirm a pending booking",
+            description = "Allows the assigned cafe manager to confirm "
+                    + "a pending booking."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Booking confirmed"),
+            @ApiResponse(responseCode = "401", description = "Authentication required"),
+            @ApiResponse(responseCode = "403", description = "Not the assigned cafe manager"),
+            @ApiResponse(responseCode = "404", description = "Booking not found"),
+            @ApiResponse(responseCode = "409", description = "Booking is not pending")
+    })
+    @PutMapping("/{id}/confirm")
+    public ResponseEntity<BookingResponse> confirmBooking(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+
+        BookingResponse response = bookingService.confirmBooking(
+                id,
+                authentication.getName()
+        );
+
+        return ResponseEntity.ok(response);
+    }
+
+
     @Operation(
             summary = "Cancel my booking",
             description = "Status transition PENDING/CONFIRMED -> CANCELLED, which frees the time slot. Only the owner may cancel; COMPLETED and already CANCELLED bookings cannot be cancelled. Writes an audit-log entry and sends a BOOKING_CANCELLED notification."
@@ -172,4 +200,5 @@ public class BookingController {
 
         return ResponseEntity.ok(response);
     }
+
 }
