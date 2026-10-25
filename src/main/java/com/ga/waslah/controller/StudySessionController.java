@@ -2,6 +2,7 @@
 package com.ga.waslah.controller;
 
 import com.ga.waslah.dto.CreateStudySessionRequest;
+import com.ga.waslah.dto.JoinSessionResponse;
 import com.ga.waslah.dto.StudySessionResponse;
 import com.ga.waslah.service.StudySessionService;
 
@@ -60,4 +61,30 @@ public class StudySessionController {
                 .status(HttpStatus.CREATED)
                 .body(response);
     }
+
+    @Operation(
+            summary = "Join a study session",
+            description = "Joins an available study session or "
+                    + "adds the user to its waitlist when full."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Joined or waitlisted"),
+            @ApiResponse(responseCode = "401", description = "Authentication required"),
+            @ApiResponse(responseCode = "404", description = "Session not found"),
+            @ApiResponse(responseCode = "409", description = "Duplicate join, inactive session, or schedule conflict")
+    })
+    @PostMapping("/{id}/join")
+    public ResponseEntity<JoinSessionResponse> joinSession(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+
+        JoinSessionResponse response = studySessionService.joinSession(
+                id,
+                authentication.getName()
+        );
+
+        return ResponseEntity.ok(response);
+    }
+
 }
