@@ -7,9 +7,11 @@ import com.ga.waslah.exception.ResourceNotFoundException;
 import com.ga.waslah.model.Booking;
 import com.ga.waslah.model.BookingStatus;
 import com.ga.waslah.model.StudySpace;
+import com.ga.waslah.model.StudySessionStatus;
 import com.ga.waslah.model.User;
 import com.ga.waslah.repository.BookingRepository;
 import com.ga.waslah.repository.StudySpaceRepository;
+import com.ga.waslah.repository.StudySessionRepository;
 import com.ga.waslah.repository.UserRepository;
 import com.ga.waslah.dto.PageResponse;
 import com.ga.waslah.util.PagingUtil;
@@ -19,7 +21,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import com.ga.waslah.event.BookingCreatedEvent;
 import org.springframework.context.ApplicationEventPublisher;
-import com.ga.waslah.exception.ConflictException;
 import com.ga.waslah.exception.ConflictException;
 
 import java.time.LocalDateTime;
@@ -41,13 +42,17 @@ public class BookingService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final StudySessionRepository studySessionRepository;
+    private final ParticipationLockService participationLockService;
 
     public BookingService(
             BookingRepository bookingRepository,
             StudySpaceRepository studySpaceRepository,
             UserRepository userRepository,
             AuditService auditService,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            StudySessionRepository studySessionRepository,
+            ParticipationLockService participationLockService
 
     ) {
         this.bookingRepository = bookingRepository;
@@ -55,6 +60,8 @@ public class BookingService {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.studySessionRepository = studySessionRepository;
+        this.participationLockService = participationLockService;
     }
 
 
@@ -79,26 +86,12 @@ public class BookingService {
         // Build the query using only filters the client supplied.
         Specification<Booking> specification =
                 Specs.<Booking>equal(status, "status")
-                        .and(
-                                Specs.<Booking>equal(
-                                        studySpaceId,
-                                        "studySpace.id"
-                                )
-                        )
-                        .and(
-                                Specs.atLeast(from, "startTime")
-                        )
-                        .and(
-                                Specs.atMost(to, "startTime")
-                        );
+                        .and(Specs.<Booking>equal(studySpaceId, "studySpace.id"))
+                        .and(Specs.atLeast(from, "startTime"))
+                        .and(Specs.atMost(to, "startTime"));
 
         // Accept only the supported sort fields.
-        Pageable pageable = PagingUtil.createPageable(
-                page,
-                size,
-                sort,
-                direction,
-                "startTime",
+        Pageable pageable = PagingUtil.createPageable(page, size, sort, direction, "startTime",
                 Set.of("startTime", "endTime", "createdAt", "status")
         );
 
@@ -152,12 +145,7 @@ public class BookingService {
         Specification<Booking> specification =
                 Specs.<Booking>equal(username, "user.username")
                         .and(Specs.equal(status, "status"))
-                        .and(
-                                Specs.equal(
-                                        studySpaceId,
-                                        "studySpace.id"
-                                )
-                        )
+                        .and(Specs.equal(studySpaceId, "studySpace.id"))
                         .and(Specs.atLeast(from, "startTime"))
                         .and(Specs.atMost(to, "startTime"));
 
@@ -204,6 +192,9 @@ public class BookingService {
             String username,
             BookingRequest request
     ) {
+        // Acquire the shared lock before taking any booking or study-space row locks.
+        participationLockService.lockStudySessionWrites();
+
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("User not found"));
@@ -327,40 +318,51 @@ public class BookingService {
     // CANCEL BOOKING
     // =========================
 
-    public BookingResponse cancelBooking(
-            Long id,
-            String username
-    ) {
+    /**
+     * Cancels a booking and its associated study session atomically.
+     * All related writers must acquire the shared advisory lock first.
+     * The booking row is locked second, so concurrent confirmation and
+     * cancellation cannot make incompatible decisions.
+     *
+     * @param id booking identifier
+     * @param username authenticated booking owner
+     * @return cancelled booking details
+     */
+    @Transactional
+    public BookingResponse cancelBooking(Long id, String username) {
 
-        Booking booking = bookingRepository.findById(id)
+        // 1. Coordinate with session creation, joining and promotion.
+        participationLockService.lockStudySessionWrites();
+
+        // 2. Serialize changes to this booking's status.
+        Booking booking = bookingRepository.findByIdForUpdate(id)
                 .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Booking not found"
-                        ));
+                        new ResourceNotFoundException("Booking not found")
+                );
 
-        // A user can only cancel their own booking.
+        // 3. Only the owner can cancel this booking.
         checkOwnership(booking, username);
 
-        // A completed booking cannot be cancelled.
         if (booking.getStatus() == BookingStatus.COMPLETED) {
-            log.warn("Booking cancellation rejected: booking is completed");
-
-            throw new ConflictException(
-                    "Completed bookings cannot be cancelled"
-            );
+            throw new ConflictException("Completed bookings cannot be cancelled");
         }
 
-        // A cancelled booking cannot be cancelled again.
         if (booking.getStatus() == BookingStatus.CANCELLED) {
-            log.warn("Booking cancellation rejected: already cancelled");
-
-            throw new ConflictException(
-                    "Booking is already cancelled"
-            );
+            throw new ConflictException("Booking is already cancelled");
         }
 
-        booking.setStatus(BookingStatus.CANCELLED);
+        // 4. Keep session/participant history, but make the session inactive.
+        studySessionRepository.findByBooking_Id(id).ifPresent(session -> {
+            if (session.getStatus() == StudySessionStatus.COMPLETED) {
+                throw new ConflictException(
+                        "Cannot cancel a booking with a completed study session"
+                );
+            }
+            session.setStatus(StudySessionStatus.CANCELLED);
+        });
 
+        // 5. Both status changes commit or roll back together.
+        booking.setStatus(BookingStatus.CANCELLED);
         Booking savedBooking = bookingRepository.save(booking);
 
         auditService.log(
@@ -370,8 +372,7 @@ public class BookingService {
                 savedBooking.getId()
         );
 
-        log.info("Booking cancelled successfully with id={}", id);
-
+        log.info("Booking {} and its associated session cancelled", id);
         return toResponse(savedBooking);
     }
 
@@ -413,12 +414,15 @@ public class BookingService {
     /**
      * Confirms a pending booking.
      * Only the assigned cafe manager can confirm it.
-  */
+     */
     @Transactional
     public BookingResponse confirmBooking(
             Long bookingId,
             String managerUsername
     ) {
+
+        // Coordinate with all study-session and booking status writes first.
+        participationLockService.lockStudySessionWrites();
 
         // Retrieve and lock the booking.
         Booking booking = bookingRepository.findByIdForUpdate(bookingId)
