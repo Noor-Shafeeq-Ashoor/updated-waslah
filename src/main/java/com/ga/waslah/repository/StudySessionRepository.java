@@ -17,4 +17,5 @@ public interface StudySessionRepository
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM StudySession s WHERE s.id = :id")
     Optional<StudySession> findByIdForUpdate(@Param("id") Long id);
+
 }

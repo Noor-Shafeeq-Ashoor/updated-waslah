@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface SessionParticipantRepository
         extends JpaRepository<SessionParticipant, Long> {
@@ -33,5 +34,9 @@ public interface SessionParticipantRepository
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime,
             @Param("statuses") List<StudySessionStatus> statuses
+    );
+    Optional<SessionParticipant> findBySession_IdAndUser_Id(
+            Long sessionId,
+            Long userId
     );
 }

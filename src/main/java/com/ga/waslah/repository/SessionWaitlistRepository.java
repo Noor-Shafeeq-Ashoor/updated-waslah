@@ -4,6 +4,7 @@ package com.ga.waslah.repository;
 import com.ga.waslah.model.SessionWaitlist;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface SessionWaitlistRepository
@@ -19,4 +20,7 @@ public interface SessionWaitlistRepository
 
     Optional<SessionWaitlist>
     findFirstBySession_IdOrderByPositionDesc(Long sessionId);
+    List<SessionWaitlist> findBySession_IdOrderByPositionAsc(
+            Long sessionId
+    );
 }
