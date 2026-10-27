@@ -845,12 +845,6 @@ The `src/test/java/com/ga/waslah/` directory includes integration tests using Ja
 
 ## Future Improvements
 - Add a **frontend** and an admin dashboard
-- Verify the five-additional-entities requirement against the Project 2 baseline.
-- Update the ERD, project plan and standalone user stories to match the integrated features.
-- Strengthen the fresh-user booking-cancellation-versus-join race test and add repeatable stress tests.
-- Explore finer-grained locking to improve throughput beyond the current global advisory lock.
-- Capture concurrency test output and database evidence for the presentation.
-
 ---
 
 ## Credits & External Resources
