@@ -279,6 +279,7 @@ User stories are documented in [`USER STORY.md`](./USER%20STORY.md).
 Entity Relationship Diagram (written from the JPA entities; 12 tables — `AUDIT_LOGS` is standalone because it stores the actor's username, not a foreign key):
 
 ```mermaid
+
 erDiagram
     USERS ||--o| USER_PROFILES : "has"
     USERS ||--o{ CAFES : "manages"
@@ -289,9 +290,17 @@ erDiagram
     USERS ||--o{ CAFE_REGISTRATION_REQUESTS : "submits"
     USERS ||--o| EMAIL_VERIFICATION_TOKENS : "has"
     USERS ||--o| PASSWORD_RESET_TOKENS : "has"
+
     CAFES ||--o{ STUDY_SPACES : "contains"
     STUDY_SPACES ||--o{ BOOKINGS : "is booked in"
     JOBS ||--o{ JOB_APPLICATIONS : "receives"
+
+    BOOKINGS ||--o| STUDY_SESSIONS : "hosts"
+    USERS ||--o{ STUDY_SESSIONS : "organizes"
+    STUDY_SESSIONS ||--o{ SESSION_PARTICIPANTS : "has"
+    STUDY_SESSIONS ||--o{ SESSION_WAITLIST : "has"
+    USERS ||--o{ SESSION_PARTICIPANTS : "joins"
+    USERS ||--o{ SESSION_WAITLIST : "waits in"
 
     USERS {
         bigint id PK
@@ -305,6 +314,7 @@ erDiagram
         boolean email_verified
         bigint profile_id FK
     }
+
     USER_PROFILES {
         bigint id PK
         varchar first_name
@@ -314,6 +324,7 @@ erDiagram
         varchar location
         varchar profile_image
     }
+
     CAFES {
         bigint id PK
         varchar name
@@ -324,6 +335,7 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
+
     STUDY_SPACES {
         bigint id PK
         varchar name
@@ -334,6 +346,7 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
+
     BOOKINGS {
         bigint id PK
         timestamp start_time
@@ -346,6 +359,40 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
+
+    STUDY_SESSIONS {
+        bigint id PK
+        varchar title "max 150"
+        varchar description "max 1000"
+        int capacity
+        varchar status "OPEN|FULL|CANCELLED|COMPLETED"
+        bigint booking_id FK,UK "one session per booking"
+        bigint organizer_id FK
+        timestamp created_at
+        timestamp updated_at
+        bigint audit_created_by "JPA auditing"
+        bigint audit_updated_by "JPA auditing"
+    }
+
+    SESSION_PARTICIPANTS {
+        bigint id PK
+        bigint session_id FK "unique with user_id"
+        bigint user_id FK "unique with session_id"
+        timestamp joined_at
+        bigint audit_created_by "JPA auditing"
+        bigint audit_updated_by "JPA auditing"
+    }
+
+    SESSION_WAITLIST {
+        bigint id PK
+        bigint session_id FK "unique with user_id and position"
+        bigint user_id FK "unique with session_id"
+        int position "FIFO order, unique per session"
+        timestamp joined_at
+        bigint audit_created_by "JPA auditing"
+        bigint audit_updated_by "JPA auditing"
+    }
+
     JOBS {
         bigint id PK
         varchar title
@@ -362,6 +409,7 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
+
     JOB_APPLICATIONS {
         bigint id PK
         varchar status "PENDING|ACCEPTED|REJECTED"
@@ -372,6 +420,7 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
+
     EMPLOYER_REQUESTS {
         bigint id PK
         varchar company_name
@@ -382,6 +431,7 @@ erDiagram
         timestamp created_at
         bigint user_id FK
     }
+
     CAFE_REGISTRATION_REQUESTS {
         bigint id PK
         varchar cafe_name
@@ -392,12 +442,14 @@ erDiagram
         timestamp updated_at
         bigint user_id FK
     }
+
     EMAIL_VERIFICATION_TOKENS {
         bigint id PK
         varchar token UK
         timestamp expires_at
         bigint user_id FK "unique"
     }
+
     PASSWORD_RESET_TOKENS {
         bigint id PK
         varchar token UK
@@ -405,6 +457,7 @@ erDiagram
         boolean used
         bigint user_id FK
     }
+
     AUDIT_LOGS {
         bigint id PK
         varchar actor "username, not a FK"
@@ -413,6 +466,7 @@ erDiagram
         bigint target_id
         timestamp timestamp
     }
+
 ```
 
 
