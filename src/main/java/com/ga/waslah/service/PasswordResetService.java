@@ -76,11 +76,7 @@ public class PasswordResetService {
 
     /**
      * Checks that a reset token exists, is unused and has not expired.
-     * Used when the user opens the link from the email.
-     *
-     * @param tokenValue token taken from the email link
-     * @throws BadRequestException if the token is invalid, used or expired
-     */
+     * Used when the user opens the link from the email.*/
     public void validateToken(String tokenValue) {
 
         PasswordResetToken resetToken =

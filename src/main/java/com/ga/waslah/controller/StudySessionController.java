@@ -19,6 +19,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * REST controller for managing group study sessions.
  */
@@ -112,6 +114,16 @@ public class StudySessionController {
         );
 
         return ResponseEntity.noContent().build();
+    }
+
+
+    @Operation(
+            summary = "List study sessions",
+            description = "Returns sessions for discovery, newest first"
+    )
+    @GetMapping
+    public ResponseEntity<List<StudySessionResponse>> listSessions() {
+        return ResponseEntity.ok(studySessionService.listSessions());
     }
 
 }

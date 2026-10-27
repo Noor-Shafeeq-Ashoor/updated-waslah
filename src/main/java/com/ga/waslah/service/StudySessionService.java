@@ -10,6 +10,7 @@ import com.ga.waslah.model.*;
 import com.ga.waslah.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -243,5 +244,18 @@ public class StudySessionService {
                 session.getCapacity(), session.getStatus(), booking.getId(),
                 booking.getStudySpace().getId(), session.getOrganizer().getUsername(),
                 booking.getStartTime(), booking.getEndTime());
+    }
+
+    /**
+     * Returns all study sessions, newest first.
+     */
+    @Transactional(readOnly = true)
+    public List<StudySessionResponse> listSessions() {
+        return studySessionRepository.findAll(
+                        Sort.by(Sort.Direction.DESC, "id")
+                )
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 }

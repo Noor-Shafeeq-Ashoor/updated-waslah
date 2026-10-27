@@ -298,10 +298,7 @@ public class ConcurrencyTestDataLoader implements CommandLineRunner {
 
     /**
      * Holds the generated booking and session identifiers.
-     *
-     * @param bookingId generated booking ID
-     * @param sessionId generated study session ID
-     */
+    */
     private record Fixture(
             Long bookingId,
             Long sessionId
