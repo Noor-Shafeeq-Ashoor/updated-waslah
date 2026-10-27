@@ -158,6 +158,8 @@ src/main/java/com/ga/waslah
 
 **Relationship summary:** `Booking` (1) ↔ (0..1) `StudySession`; `User` (1) → (many) organized `StudySession` records; `StudySession` (1) → (many) `SessionParticipant` and `SessionWaitlist` entries; each participant or waitlist entry refers to a `User`.
 
+**Entity-count note:** The source snapshot contains these three clearly identifiable session-related entities. The assignment separately requires **five additional meaningful entities** compared with Project 2 and **ten total**. The five-new-entity requirement needs confirmation against the Project 2 baseline; this README does not claim it is met. Update the existing ERD to include the three new session relationships.
+
 ### Error response format
 
 Every error uses the same structure:
@@ -215,6 +217,21 @@ Status codes used: `200`, `201`, `204`, `400`, `401`, `403`, `404`, `409`, `429`
 | 18 | Important actions are written to the audit log with the acting user: bookings (create / cancel / confirm / reject), cafés (create / update / activate / deactivate), jobs (create / update / close), job applications (submit / accept / reject), café requests (submit / approve / reject), employer-request decisions and user deactivation | `AuditService` |
 | 19 | Profile pictures: JPG/PNG only, max 5 MB, content is checked, stored under a generated UUID name; a replaced picture is deleted from disk | `ProfileImageStorageService` |
 
+### Study-session business rules
+
+| # | Rule | Enforced in |
+|---|---|---|
+| 20 | Only the owner of a confirmed booking may create its study session; each booking may have at most one session. | `StudySessionService` |
+| 21 | Session capacity must be at least 2 and cannot exceed the booked study space capacity; the organizer occupies the first seat. | `StudySessionService` |
+| 22 | A user cannot join the same session or its waitlist more than once. | `StudySessionService` |
+| 23 | Confirmed participation in overlapping active sessions is rejected. | `StudySessionService` |
+| 24 | Available seats are allocated to eligible users; existing waitlisted users take priority over new joiners. | `StudySessionService` |
+| 25 | If no seat is available, a new eligible joiner enters the waitlist at the next position. | `StudySessionService` |
+| 26 | The organizer cannot leave using the participant-leave endpoint; leaving releases a seat and attempts FIFO promotion of eligible waiters. | `StudySessionService` |
+| 27 | Inactive sessions, unconfirmed bookings, and bookings that have already ended cannot accept new participants. | `StudySessionService` |
+| 28 | Cancelling a booking cancels its linked active session in the same transaction. | `BookingService` |
+| 29 | Mutating session participation and relevant booking operations acquire the shared PostgreSQL transaction-scoped advisory lock to serialize competing writes. | `ParticipationLockService`, `StudySessionService`, `BookingService` |
+
 ### Group study sessions and FIFO waitlist
 
 Project 3 extends the original WASLAH booking platform rather than replacing it. A user with a **confirmed study-space booking** can organize a group **Study Session**. Other users can join up to the session's capacity, or enter a **first-in, first-out (FIFO) waitlist** when no seats are available. When a participant leaves, the service attempts to promote eligible waitlisted users. The organizer is automatically registered as a participant.
@@ -259,27 +276,15 @@ The existing booking workflow also uses database transactions and pessimistic ro
 
 ## User Stories
 
-User stories are documented in [`USER STORY.md`](./USER%20STORY.md).
-
-
+See [`USER STORY.md`](./USER%20STORY.md) for **35 integrated user stories**, covering the original platform and the group study-session, FIFO waitlist, and concurrency workflows. The new stories include acceptance criteria for last-seat allocation, concurrent departures, and booking cancellation.
 
 ---
-
-### Group study-session user stories
-
-- As an organizer, I want to create a group study session from my confirmed booking so that others can join me.
-- As a student, I want to join a session with an available seat so that I can participate without overbooking.
-- As a student, I want to be placed on a FIFO waitlist when a session is full so that I can be considered fairly when a seat opens.
-- As a participant, I want leaving a session to release my seat safely so that an eligible waiting student can be promoted.
-- As an organizer, I want cancelling my booking to invalidate its linked session so that no one can join a cancelled session.
-- As a student, I want simultaneous join requests to respect the session capacity so that no two people are promised the same last seat.
 
 ## ERD
 
 Entity Relationship Diagram (written from the JPA entities; 12 tables — `AUDIT_LOGS` is standalone because it stores the actor's username, not a foreign key):
 
 ```mermaid
-
 erDiagram
     USERS ||--o| USER_PROFILES : "has"
     USERS ||--o{ CAFES : "manages"
@@ -290,17 +295,9 @@ erDiagram
     USERS ||--o{ CAFE_REGISTRATION_REQUESTS : "submits"
     USERS ||--o| EMAIL_VERIFICATION_TOKENS : "has"
     USERS ||--o| PASSWORD_RESET_TOKENS : "has"
-
     CAFES ||--o{ STUDY_SPACES : "contains"
     STUDY_SPACES ||--o{ BOOKINGS : "is booked in"
     JOBS ||--o{ JOB_APPLICATIONS : "receives"
-
-    BOOKINGS ||--o| STUDY_SESSIONS : "hosts"
-    USERS ||--o{ STUDY_SESSIONS : "organizes"
-    STUDY_SESSIONS ||--o{ SESSION_PARTICIPANTS : "has"
-    STUDY_SESSIONS ||--o{ SESSION_WAITLIST : "has"
-    USERS ||--o{ SESSION_PARTICIPANTS : "joins"
-    USERS ||--o{ SESSION_WAITLIST : "waits in"
 
     USERS {
         bigint id PK
@@ -314,7 +311,6 @@ erDiagram
         boolean email_verified
         bigint profile_id FK
     }
-
     USER_PROFILES {
         bigint id PK
         varchar first_name
@@ -324,7 +320,6 @@ erDiagram
         varchar location
         varchar profile_image
     }
-
     CAFES {
         bigint id PK
         varchar name
@@ -335,7 +330,6 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
-
     STUDY_SPACES {
         bigint id PK
         varchar name
@@ -346,7 +340,6 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
-
     BOOKINGS {
         bigint id PK
         timestamp start_time
@@ -359,40 +352,6 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
-
-    STUDY_SESSIONS {
-        bigint id PK
-        varchar title "max 150"
-        varchar description "max 1000"
-        int capacity
-        varchar status "OPEN|FULL|CANCELLED|COMPLETED"
-        bigint booking_id FK,UK "one session per booking"
-        bigint organizer_id FK
-        timestamp created_at
-        timestamp updated_at
-        bigint audit_created_by "JPA auditing"
-        bigint audit_updated_by "JPA auditing"
-    }
-
-    SESSION_PARTICIPANTS {
-        bigint id PK
-        bigint session_id FK "unique with user_id"
-        bigint user_id FK "unique with session_id"
-        timestamp joined_at
-        bigint audit_created_by "JPA auditing"
-        bigint audit_updated_by "JPA auditing"
-    }
-
-    SESSION_WAITLIST {
-        bigint id PK
-        bigint session_id FK "unique with user_id and position"
-        bigint user_id FK "unique with session_id"
-        int position "FIFO order, unique per session"
-        timestamp joined_at
-        bigint audit_created_by "JPA auditing"
-        bigint audit_updated_by "JPA auditing"
-    }
-
     JOBS {
         bigint id PK
         varchar title
@@ -409,7 +368,6 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
-
     JOB_APPLICATIONS {
         bigint id PK
         varchar status "PENDING|ACCEPTED|REJECTED"
@@ -420,7 +378,6 @@ erDiagram
         bigint audit_created_by "JPA auditing"
         bigint audit_updated_by "JPA auditing"
     }
-
     EMPLOYER_REQUESTS {
         bigint id PK
         varchar company_name
@@ -431,7 +388,6 @@ erDiagram
         timestamp created_at
         bigint user_id FK
     }
-
     CAFE_REGISTRATION_REQUESTS {
         bigint id PK
         varchar cafe_name
@@ -442,14 +398,12 @@ erDiagram
         timestamp updated_at
         bigint user_id FK
     }
-
     EMAIL_VERIFICATION_TOKENS {
         bigint id PK
         varchar token UK
         timestamp expires_at
         bigint user_id FK "unique"
     }
-
     PASSWORD_RESET_TOKENS {
         bigint id PK
         varchar token UK
@@ -457,7 +411,6 @@ erDiagram
         boolean used
         bigint user_id FK
     }
-
     AUDIT_LOGS {
         bigint id PK
         varchar actor "username, not a FK"
@@ -466,7 +419,6 @@ erDiagram
         bigint target_id
         timestamp timestamp
     }
-
 ```
 
 
@@ -845,6 +797,7 @@ The `src/test/java/com/ga/waslah/` directory includes integration tests using Ja
 
 ## Future Improvements
 - Add a **frontend** and an admin dashboard
+
 ---
 
 ## Credits & External Resources
