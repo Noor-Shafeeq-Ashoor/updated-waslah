@@ -1,14 +1,11 @@
 package com.ga.waslah.config;
 
-import com.ga.waslah.model.Booking;
-import com.ga.waslah.model.BookingStatus;
 import com.ga.waslah.model.Cafe;
 import com.ga.waslah.model.Role;
 import com.ga.waslah.model.StudySpace;
 import com.ga.waslah.model.User;
 import com.ga.waslah.model.UserProfile;
 import com.ga.waslah.model.UserStatus;
-import com.ga.waslah.repository.BookingRepository;
 import com.ga.waslah.repository.CafeRepository;
 import com.ga.waslah.repository.StudySpaceRepository;
 import com.ga.waslah.repository.UserRepository;
@@ -17,28 +14,29 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
  * Seeds initial development data so the application can be demonstrated
- * without manually creating every user, cafe, study space, and booking.
+ * without manually creating every user, cafe, or study space.
  *
- * <p>The seeding methods check for existing records before inserting them,
- * so restarting the application does not repeatedly duplicate the seed data.</p>
+ * The seeding methods check for existing records before inserting them,
+ * so restarting the application does not repeatedly duplicate the seed data.
  *
- * <p>Demo passwords should be configured only for local development.
+ * <p>Only runs when the Spring profile is dev. Does not seed bookings or sessions.
+ * Demo passwords should be configured only for local development.
  * Do not use the development credentials in a deployed environment.</p>
  */
 @Slf4j
 @Component
+@Profile("dev")
 public class DataLoader implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final CafeRepository cafeRepository;
     private final StudySpaceRepository studySpaceRepository;
-    private final BookingRepository bookingRepository;
     private final PasswordEncoder passwordEncoder;
 
     private final String adminUsername;
@@ -51,7 +49,6 @@ public class DataLoader implements CommandLineRunner {
             UserRepository userRepository,
             CafeRepository cafeRepository,
             StudySpaceRepository studySpaceRepository,
-            BookingRepository bookingRepository,
             PasswordEncoder passwordEncoder,
             @Value("${app.admin.username:admin}") String adminUsername,
             @Value("${app.admin.email:admin@waslah.com}") String adminEmail,
@@ -62,7 +59,6 @@ public class DataLoader implements CommandLineRunner {
         this.userRepository = userRepository;
         this.cafeRepository = cafeRepository;
         this.studySpaceRepository = studySpaceRepository;
-        this.bookingRepository = bookingRepository;
         this.passwordEncoder = passwordEncoder;
         this.adminUsername = adminUsername;
         this.adminEmail = adminEmail;
@@ -80,14 +76,18 @@ public class DataLoader implements CommandLineRunner {
     public void run(String... args) {
         seedAdmin();
 
-        User demoUser = seedUser(
-                "demo.user",
-                "demo.user@waslah.com",
-                demoUserPassword,
-                Role.USER,
-                "Demo",
-                "User"
-        );
+        // Dedicated verified accounts for end-to-end session testing.
+        // No bookings or sessions are seeded: exercise those APIs in Postman.
+        seedUser("demo.user", "demo.user@waslah.com", demoUserPassword,
+                Role.USER, "Demo", "User");
+        seedUser("organizer1", "organizer1@waslah.com", demoUserPassword,
+                Role.USER, "Organizer", "One");
+        seedUser("organizer2", "organizer2@waslah.com", demoUserPassword,
+                Role.USER, "Organizer", "Two");
+        for (int i = 1; i <= 4; i++) {
+            seedUser("student" + i, "student" + i + "@waslah.com",
+                    demoUserPassword, Role.USER, "Student", String.valueOf(i));
+        }
 
         User cafeManager = seedUser(
                 "cafe.manager",
@@ -117,17 +117,11 @@ public class DataLoader implements CommandLineRunner {
                 "Seef, Bahrain"
         );
 
-        StudySpace quietDesk1 = seedStudySpace(manamaCafe, "Quiet Desk 1", 1, 2.0);
+        seedStudySpace(manamaCafe, "Quiet Desk 1", 1, 2.0);
         seedStudySpace(manamaCafe, "Quiet Desk 2", 1, 2.0);
         seedStudySpace(manamaCafe, "Group Room", 6, 8.0);
         seedStudySpace(seefCafe, "Individual Desk", 1, 3.0);
         seedStudySpace(seefCafe, "Meeting Room", 8, 10.0);
-
-        if (demoUser != null && quietDesk1 != null) {
-            seedBooking(demoUser, quietDesk1);
-        } else {
-            log.warn("Sample booking skipped: configure app.seed.demo-user-password.");
-        }
 
         log.info("WASLAH seed-data initialization completed.");
     }
@@ -278,35 +272,4 @@ public class DataLoader implements CommandLineRunner {
         return savedSpace;
     }
 
-    /**
-     * Creates one future confirmed booking for the demo user if they have
-     * no existing bookings. The booking is placed two days in the future.
-     *
-     * @param user demo user who owns the booking
-     * @param studySpace study space being booked
-     */
-    private void seedBooking(User user, StudySpace studySpace) {
-        if (!bookingRepository.findByUser_Username(user.getUsername()).isEmpty()) {
-            log.info("Sample booking skipped because user '{}' already has a booking.", user.getUsername());
-            return;
-        }
-
-        LocalDateTime start = LocalDateTime.now()
-                .plusDays(2)
-                .withHour(10)
-                .withMinute(0)
-                .withSecond(0)
-                .withNano(0);
-
-        Booking booking = new Booking();
-        booking.setUser(user);
-        booking.setStudySpace(studySpace);
-        booking.setStartTime(start);
-        booking.setEndTime(start.plusHours(2));
-        booking.setStatus(BookingStatus.CONFIRMED);
-
-        bookingRepository.save(booking);
-        log.info("Sample booking created for user '{}' at '{}'.",
-                user.getUsername(), studySpace.getName());
-    }
 }

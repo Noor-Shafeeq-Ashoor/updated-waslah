@@ -87,4 +87,31 @@ public class StudySessionController {
         return ResponseEntity.ok(response);
     }
 
+
+    @Operation(
+            summary = "Leave a study session",
+            description = "Removes the authenticated user from a session "
+                    + "or its waitlist. If a participant leaves, "
+                    + "the next eligible waitlisted user is promoted."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Successfully left session"),
+            @ApiResponse(responseCode = "401", description = "Authentication required"),
+            @ApiResponse(responseCode = "404", description = "Session or participation not found"),
+            @ApiResponse(responseCode = "409", description = "Cannot leave the session")
+    })
+    @PostMapping("/{id}/leave")
+    public ResponseEntity<Void> leaveSession(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+
+        studySessionService.leaveSession(
+                id,
+                authentication.getName()
+        );
+
+        return ResponseEntity.noContent().build();
+    }
+
 }
