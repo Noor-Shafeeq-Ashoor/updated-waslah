@@ -1,6 +1,6 @@
-# WASLAH — User Stories & Project Plan
+# WASLAH — User Stories
 
-## 37. User Stories
+## User Stories
 
 The following user stories define the main users of the WASLAH platform and the functionality they need.
 
@@ -48,8 +48,38 @@ The following user stories define the main users of the WASLAH platform and the 
 
 | ID | User Story |
 |---|---|
-| US-18 | As a café manager, I want to view bookings for my café, so that I can manage customer reservations. |
-| US-19 | As a café manager, I want to confirm a booking, so that customers know their reservation has been accepted. |
-| US-20 | As a café manager, I want to cancel or reject a booking, so that I can manage unavailable reservations. |
----
+| US-21 | As a café manager, I want to view bookings for my café, so that I can manage customer reservations. |
+| US-22 | As a café manager, I want to confirm a pending booking, so that customers know their reservation has been accepted. |
+| US-23 | As a café manager, I want to reject a pending booking for my café, so that unavailable reservations can be released. |
 
+### Group Study Sessions & Waitlist
+
+| ID | User Story |
+|---|---|
+| US-24 | As a booking owner, I want to create a study session from my confirmed booking, so that other students can study with me. |
+| US-25 | As an organizer, I want to set a session capacity within the study-space limit, so that I can manage available seats. |
+| US-26 | As a student, I want to join a session with an available seat, so that I can participate in group study. |
+| US-27 | As a student, I want to enter a FIFO waitlist when a session has no seats, so that I can be considered when a seat becomes available. |
+| US-28 | As a participant, I want to leave a session, so that my seat becomes available to another student. |
+| US-29 | As a waitlisted student, I want to be promoted when an eligible seat becomes available, so that I can join without submitting another request. |
+| US-30 | As a student, I want duplicate and overlapping participation prevented, so that my confirmed sessions do not conflict. |
+| US-31 | As an organizer, I want cancellation of my booking to cancel its linked session, so that nobody can join a cancelled session. |
+
+### Concurrency & Data Consistency
+
+| ID | User Story |
+|---|---|
+| US-32 | As a student, I want two simultaneous requests for the final seat to be processed safely, so that session capacity is never exceeded. |
+| US-33 | As a participant, I want simultaneous departures to promote waiting students without duplicate memberships, so that the waitlist remains consistent. |
+| US-34 | As a student, I want simultaneous attempts to join overlapping sessions to be checked safely, so that I cannot receive conflicting confirmed seats. |
+| US-35 | As an organizer, I want booking cancellation and session joining to be coordinated, so that cancellation cannot leave an active session accepting new participants. |
+
+### Acceptance Criteria — Concurrent Seat Allocation
+
+**Given** an OPEN study session with one remaining seat, **when** two different eligible students request to join concurrently, **then** at most one new student receives a confirmed seat and the other is waitlisted; confirmed participants never exceed capacity.
+
+**Given** a FULL session with eligible users waiting, **when** participants leave, **then** available seats are filled from the earliest eligible waitlist positions without duplicate promotion.
+
+**Given** a confirmed booking with an active linked session, **when** the booking is cancelled, **then** both booking and linked session finish as CANCELLED, and no later join may succeed.
+
+**Testing note:** The cancellation-versus-new-join race still requires a fresh-fixture test with a joiner who has not already joined; do not claim this particular race is fully verified.
