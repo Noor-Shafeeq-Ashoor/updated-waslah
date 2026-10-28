@@ -18,4 +18,6 @@ public class BookingResponse {
     private LocalDateTime endTime;
     private BookingStatus status;
     private LocalDateTime createdAt;
+    private Long studySpaceId;
+    private Integer studySpaceCapacity;
 }

@@ -30,8 +30,7 @@ import java.util.List;
  *     One user joining two overlapping study sessions.
  *     Two participants leaving while waitlisted users are promoted.
  *     A booking cancellation racing against a session join.
- *
- *
+
  * The loader is available only in the development profile and
  * must be explicitly enabled using app.seed.concurrency-tests=true.
 
@@ -55,7 +54,7 @@ public class ConcurrencyTestDataLoader implements CommandLineRunner {
 
     /**
      * Runs after the normal DataLoader has seeded users and study spaces.
-    */
+     */
     @Override
     public void run(String... args) {
 
@@ -212,7 +211,7 @@ public class ConcurrencyTestDataLoader implements CommandLineRunner {
      * Creates a confirmed booking and its associated study session.
      * The real BookingService and StudySessionService are used
      * to preserve application validation and business rules.
-    */
+     */
     private Fixture createFixture(
             String organizer,
             Long studySpaceId,
@@ -298,7 +297,7 @@ public class ConcurrencyTestDataLoader implements CommandLineRunner {
 
     /**
      * Holds the generated booking and session identifiers.
-    */
+     */
     private record Fixture(
             Long bookingId,
             Long sessionId

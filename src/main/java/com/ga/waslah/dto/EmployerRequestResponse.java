@@ -21,4 +21,6 @@ public class EmployerRequestResponse {
     private String commercialRegistration;
 
     private EmployerRequestStatus status;
+
+    private String username;
 }
