@@ -63,7 +63,9 @@ A secure Spring Boot REST API that connects people to **work opportunities** and
 - **Spring profiles** (`dev`, `test`, `prod`); secrets are read from environment variables
 - Consistent JSON **error responses** via a global exception handler
 - **Swagger / OpenAPI** documentation with descriptions, examples and per-endpoint status codes
-- **Database seeding** of an **admin** (from environment variables), a demo café manager, two cafés and five study spaces on first start
+- **Database seeding** of an **admin** (from environment variables), a demo user, a demo employer with five job offers, a demo café manager, two cafés and five study spaces on first start
+- **Role-based React frontend** (`frontend/`) with four areas: student, employer, café manager and admin
+- **Job vacancies**: each job has a number of vacancies; accepting applicants is lock-protected so a job can never be over-filled
 - **Group study sessions** with capacity enforcement, participant management, FIFO waitlists, and transaction-safe concurrent joins and leaves
 
 ---
@@ -300,23 +302,9 @@ The existing booking workflow also uses database transactions and pessimistic ro
 
 **Asynchronous processing.** `SessionActivityListener` uses `CompletableFuture` on the `notificationExecutor` pool: persisting and pushing run as independent tasks; failures are logged and isolated. The scheduler also runs in the background.
 
+**Job vacancies (second concurrency workflow).** A job has `vacancies` and a `filledVacancies` counter. Accepting an applicant locks the application row and then the job row (`SELECT … FOR UPDATE`), checks `filledVacancies < vacancies`, increments the counter and closes the job when the last position is taken. Two employers (or two clicks) accepting different applicants for the last vacancy therefore cannot both succeed; the second gets `409`. Study-session responses also carry `participantCount` and `waitlistCount` so the UI can show seats taken.
+
 **Why a lock and not only optimistic locking?** A join reads several rows (seat count, waitlist, overlapping sessions) and writes several others, so a version column on one row would not detect the conflict. The lock makes the whole read-decide-write sequence a critical section. The cost is serialization of unrelated sessions (a documented trade-off).
-
-### Updated API (Project 3 iteration)
-
-| Method | Endpoint | Change |
-|---|---|---|
-| GET | `/api/notifications` | New: my stored notifications (`unreadOnly`, `page`, `size`) |
-| GET | `/api/notifications/unread-count` | New: `{"unread": n}` |
-| GET | `/api/study-sessions/{id}/events` | New: session history (`403` unless involved in the session) |
-| PUT | `/api/notifications/{id}/read` | New: mark one of my notifications as read |
-| POST | `/api/study-sessions/{id}/leave` | Changed: also lets a waitlisted user leave the waiting list |
-| PUT | `/api/manager/bookings/{id}/cancel` | Changed: also cancels a `CONFIRMED` booking (and its session); `409` for bookings that cannot be cancelled |
-| PUT | `/api/manager/bookings/{id}/confirm` | Changed: `409` (not `403`) for a non-pending or already ended booking |
-| PUT | `/api/bookings/{id}/confirm` | Deprecated duplicate of the manager endpoint; same implementation |
-| POST | `/auth/login` | Changed: unknown username now returns `401` like a wrong password; response also contains `role`; token carries a `role` claim |
-| POST | `/auth/forgot-password` | Changed: always answers `200`, whether or not the address is registered |
-| POST | `/api/study-sessions` | Changed: `capacity` must be at least 2 (validation error `400` otherwise) |
 
 ---
 
@@ -416,6 +404,8 @@ erDiagram
         varchar job_type "FULL_TIME|PART_TIME|CONTRACT|INTERNSHIP|FREELANCE"
         double salary
         timestamp deadline
+        int vacancies "default 1"
+        int filled_vacancies "default 0"
         varchar status "OPEN|CLOSED"
         timestamp created_at
         timestamp updated_at
@@ -702,8 +692,9 @@ Content-Type: application/json
 { "username": "sara", "password": "Passw0rd!" }
 ```
 ```json
-{ "token": "eyJhbGciOiJIUzI1NiJ9..." }
+{ "token": "eyJhbGciOiJIUzI1NiJ9...", "role": "USER" }
 ```
+The token also carries a `role` claim; after an admin approves a role request the user must sign in again to receive the new role.
 
 **Create a booking**
 ```http
@@ -798,10 +789,29 @@ Seeding is automatic: on startup, `DataLoader` checks for existing records and c
 | :--- | :--- | :--- | :--- |
 | **Admin Account** | `admin` *(or `ADMIN_USERNAME`)* | `ADMIN` | Created only if `ADMIN_PASSWORD` is set (at least 8 characters); email verified. |
 | **Demo User Account** | `demo.user` | `USER` | Created if `app.seed.demo-user-password` is set; email verified. |
+| **Employer and job offers** | `employer1` | `EMPLOYER` | Created if `app.seed.demo-user-password` is set. Five job offers (Junior Java Developer, 1 vacancy; Backend Developer, 2 vacancies; UX Design Intern; Customer Success Associate; Freelance Technical Writer) and pending applications from `student1`–`student4` for the first two, ready for the vacancy-race demo. Seeded once, skipped if `employer1` already has jobs. |
 | **Café Manager Account** | `cafe.manager` | `CAFE_MANAGER` | Created if `app.seed.cafe-manager-password` is set; email verified. |
 | **Bahrain Study Cafe** | `Bahrain Study Cafe` | Manama, Bahrain | **Spaces:** Quiet Desk 1, Quiet Desk 2, Group Room |
 | **WASLAH Workspace Cafe** | `WASLAH Workspace Cafe` | Seef, Bahrain | **Spaces:** Individual Desk, Meeting Room |
-| **Sample Booking** | — | `CONFIRMED` | Automatically created for `demo.user` at *Quiet Desk 1* (scheduled 2 days in the future for 2 hours). |
+
+
+### Frontend (React + Vite + TypeScript)
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173 (the API is expected at http://localhost:8080)
+npm run build      # type-check and production build
+```
+
+| Role | Area | Main screens |
+|---|---|---|
+| `USER` | Student | Dashboard, jobs and applications, cafés, bookings, study sessions (seats taken / total, waitlist), partner finder |
+| `EMPLOYER` | Employer | Overview, own job offers with vacancies, applicants (accept / reject) |
+| `CAFE_MANAGER` | Café manager | Overview, own spaces, booking confirmation and rejection |
+| `ADMIN` | Admin | Dashboard counts, users, role requests, audit log |
+
+Notes: the JWT is kept in `sessionStorage` and the role is read from its `role` claim; a user opening another role's page is redirected to their own home. Notifications arrive over SSE using `fetch` streaming (the browser `EventSource` cannot send the `Authorization` header). A study session can only be created from a `CONFIRMED`, future booking whose study space holds at least 2 people.
 
 ---
 
@@ -833,7 +843,7 @@ Try the full sign-up flow:
 3. `POST /auth/login` → copy the JWT.
 4. Call protected endpoints with `Authorization: Bearer <JWT>`.
 
-For a quick demo without registering, log in as `cafe.manager` / `Cafe@12345` and call `GET /api/manager/bookings`.
+For a quick demo without registering, log in as one of the seeded accounts (`demo.user`, `employer1`, `cafe.manager`, `admin`) using the passwords you configured in step 4, and open the matching area of the frontend.
 
 Uploaded profile pictures are written to `uploads/profile-images/` (configurable with `app.upload.profile-images-dir`).
 
@@ -862,7 +872,11 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 | Thread-safety of the shared SSE registry under 1,000 concurrent calls | `NotificationServiceConcurrencyTest` | 1 |
 | Race condition without control vs. with a lock and with compare-and-set | `SeatAllocationRaceDemoTest` | 3 |
 | JWT carries the role claim | `JwtServiceTest` | 2 |
+| Café-manager space edit: lock order, capacity rule, ownership, list incl. unavailable | `CafeManagerStudySpaceServiceTest` | 7 |
+| Admin deactivate / reactivate, no self-deactivation | `UserServiceTest` | 5 |
 | Job rules: employers only, owner-only close, audit entry | `JobServiceTest` | 3 |
+| Vacancy rules: accept counts a position, last one closes the job, full job rejects, reject keeps seats | `JobApplicationServiceTest` | 6 |
+| Six threads accept applicants for a two-vacancy job (H2): exactly two succeed | `JobVacancyConcurrencyTest` | 1 |
 | Password reset: token validation (valid / expired / used) and reset | `PasswordResetServiceTest` | 4 |
 | User details / role authority | `MyUserDetailsTest` | 1 |
 | Application context loads (`test` profile) | `WaslahApplicationTests` | 1 |
@@ -918,7 +932,8 @@ The `src/test/java/com/ga/waslah/` directory includes integration tests using Ja
 - **Correctness versus throughput:** A global transaction-level advisory lock simplifies reasoning but may become a bottleneck under heavy load.
 
 ## Future Improvements
-- Extend the existing React frontend (`frontend/`) with session, waitlist and notification screens, and add an admin dashboard
+- Add automated frontend tests (Vitest / Playwright) for the four role areas
+- Show live seat counts through SSE instead of on refresh
 - Run the concurrency integration tests automatically (Testcontainers PostgreSQL + Failsafe) instead of against a hand-started server
 - Use finer-grained locks (per session / per study space) with a fixed acquisition order
 - Resend-verification endpoint; JWT revocation after password change; rate limiting behind a proxy (`X-Forwarded-For`)
@@ -942,4 +957,3 @@ The `src/test/java/com/ga/waslah/` directory includes integration tests using Ja
 | Spring Task Execution | https://docs.spring.io/spring-framework/reference/integration/scheduling.html | Asynchronous notification thread pool |
 | Java CompletableFuture API | https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/CompletableFuture.html | Chaining and failure handling for notification delivery |
 | Spring transaction-bound events | https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html | `@TransactionalEventListener(AFTER_COMMIT)` for notifications |
-
