@@ -44,7 +44,7 @@ public class BookingController {
      * notification to the user who attempted the booking.
      * The exception is rethrown so the application's normal
      * error handling can process the failed request.
-   */
+     */
     @Operation(
             summary = "Create a booking",
             description = "Creates a PENDING booking. Rejected when end is not after start, the space is unavailable, or the slot overlaps a PENDING/CONFIRMED booking (the study space row is locked during the check to prevent double booking). Triggers a real-time notification and an audit-log entry."
@@ -146,16 +146,19 @@ public class BookingController {
 
 
     @Operation(
-            summary = "Confirm a pending booking",
-            description = "Allows the assigned cafe manager to confirm "
-                    + "a pending booking."
+            summary = "Confirm a pending booking (deprecated)",
+            description = "Deprecated duplicate of PUT /api/manager/bookings/{id}/confirm, "
+                    + "kept so existing clients keep working. It shares the same locked "
+                    + "implementation. Allows the assigned cafe manager to confirm "
+                    + "a pending booking.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Booking confirmed"),
             @ApiResponse(responseCode = "401", description = "Authentication required"),
             @ApiResponse(responseCode = "403", description = "Not the assigned cafe manager"),
             @ApiResponse(responseCode = "404", description = "Booking not found"),
-            @ApiResponse(responseCode = "409", description = "Booking is not pending")
+            @ApiResponse(responseCode = "409", description = "Booking is not pending, or it has already ended")
     })
     @PutMapping("/{id}/confirm")
     public ResponseEntity<BookingResponse> confirmBooking(

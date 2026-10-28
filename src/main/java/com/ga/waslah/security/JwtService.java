@@ -27,8 +27,22 @@ public class JwtService {
     }
 
     public String generateToken(String username) {
+        return generateToken(username, null);
+    }
 
-        return Jwts.builder()
+    /**
+     * Creates a token that also carries the user's role as a "role" claim.
+     * The claim is only a hint for the frontend (to decide which screens to
+     * show); the API always authorizes from the role stored in the database.
+     */
+    public String generateToken(String username, String role) {
+
+        io.jsonwebtoken.JwtBuilder builder = Jwts.builder();
+        if (role != null) {
+            builder.claim("role", role);
+        }
+
+        return builder
                 .setSubject(username)
                 .setIssuedAt(new Date())
                 .setExpiration(

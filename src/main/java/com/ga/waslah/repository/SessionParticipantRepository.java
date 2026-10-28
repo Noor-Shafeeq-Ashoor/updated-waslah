@@ -35,6 +35,8 @@ public interface SessionParticipantRepository
             @Param("endTime") LocalDateTime endTime,
             @Param("statuses") List<StudySessionStatus> statuses
     );
+    List<SessionParticipant> findBySession_Id(Long sessionId);
+
     Optional<SessionParticipant> findBySession_IdAndUser_Id(
             Long sessionId,
             Long userId

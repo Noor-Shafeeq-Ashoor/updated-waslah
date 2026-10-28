@@ -23,4 +23,11 @@ public interface SessionWaitlistRepository
     List<SessionWaitlist> findBySession_IdOrderByPositionAsc(
             Long sessionId
     );
+
+    Optional<SessionWaitlist> findBySession_IdAndUser_Id(
+            Long sessionId,
+            Long userId
+    );
+
+    void deleteBySession_Id(Long sessionId);
 }

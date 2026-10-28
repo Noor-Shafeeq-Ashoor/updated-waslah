@@ -45,13 +45,14 @@ public class CafeManagerBookingController {
 
     @Operation(
             summary = "Confirm a pending booking",
-            description = "Status transition PENDING -> CONFIRMED. Only for bookings in the caller's own cafés."
+            description = "Status transition PENDING -> CONFIRMED. Only for bookings in the caller's own cafés. A booking whose end time has passed cannot be confirmed. Runs under the shared booking/session lock, so it cannot overwrite a concurrent cancellation."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Booking confirmed"),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired JWT"),
-            @ApiResponse(responseCode = "403", description = "Not your café, or booking is not PENDING"),
-            @ApiResponse(responseCode = "404", description = "Resource not found")
+            @ApiResponse(responseCode = "403", description = "Not a café manager, or not your café"),
+            @ApiResponse(responseCode = "404", description = "Resource not found"),
+            @ApiResponse(responseCode = "409", description = "Booking is not PENDING, or it has already ended")
     })
     @PutMapping("/{id}/confirm")
     public ResponseEntity<BookingResponse> confirmBooking(
@@ -67,14 +68,15 @@ public class CafeManagerBookingController {
     }
 
     @Operation(
-            summary = "Reject a pending booking",
-            description = "Status transition PENDING -> CANCELLED, which frees the time slot. Only for bookings in the caller's own cafés."
+            summary = "Reject a pending booking or cancel a confirmed one",
+            description = "Status transition PENDING or CONFIRMED -> CANCELLED, which frees the time slot. Cancelling a CONFIRMED booking also cancels its linked study session, clears its waitlist and notifies the participants (SESSION_CANCELLED). Only for bookings in the caller's own cafés."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Booking rejected (CANCELLED)"),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired JWT"),
-            @ApiResponse(responseCode = "403", description = "Not your café, or booking is not PENDING"),
-            @ApiResponse(responseCode = "404", description = "Resource not found")
+            @ApiResponse(responseCode = "403", description = "Not a café manager, or not your café"),
+            @ApiResponse(responseCode = "404", description = "Resource not found"),
+            @ApiResponse(responseCode = "409", description = "Booking is already CANCELLED or COMPLETED")
     })
     @PutMapping("/{id}/cancel")
     public ResponseEntity<BookingResponse> rejectBooking(

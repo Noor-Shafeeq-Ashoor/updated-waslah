@@ -74,6 +74,19 @@ The following user stories define the main users of the WASLAH platform and the 
 | US-34 | As a student, I want simultaneous attempts to join overlapping sessions to be checked safely, so that I cannot receive conflicting confirmed seats. |
 | US-35 | As an organizer, I want booking cancellation and session joining to be coordinated, so that cancellation cannot leave an active session accepting new participants. |
 
+### Waitlist, Notifications and Booking Management (Project 3 iteration)
+
+| ID | User Story |
+|---|---|
+| US-36 | As a waitlisted student, I want to leave the waiting list, so that I am not promoted into a session I no longer want. |
+| US-37 | As a student, I want to be told in real time when I am waitlisted or promoted, so that I know whether I have a seat. |
+| US-38 | As a user, I want to read notifications I missed while offline, so that I do not lose a promotion or cancellation notice. |
+| US-39 | As an organizer, I want to be told when someone joins or leaves my session, so that I know who is attending. |
+| US-40 | As a café manager, I want to cancel a confirmed booking, so that I can release a space I can no longer provide; its study session is cancelled and its participants are told. |
+| US-41 | As a café manager, I want my confirm or reject action to be coordinated with the customer's cancellation, so that one cannot silently overwrite the other. *(concurrency-sensitive)* |
+| US-42 | As a café manager, I want unanswered pending bookings to expire automatically and not be confirmable after they ended, so that stale requests do not block a time slot. |
+| US-43 | As an organizer or participant, I want to see the history of a session, so that I can understand in what order joins, departures and promotions were applied. *(concurrency-sensitive)* |
+
 ### Acceptance Criteria — Concurrent Seat Allocation
 
 **Given** an OPEN study session with one remaining seat, **when** two different eligible students request to join concurrently, **then** at most one new student receives a confirmed seat and the other is waitlisted; confirmed participants never exceed capacity.
@@ -81,5 +94,9 @@ The following user stories define the main users of the WASLAH platform and the 
 **Given** a FULL session with eligible users waiting, **when** participants leave, **then** available seats are filled from the earliest eligible waitlist positions without duplicate promotion.
 
 **Given** a confirmed booking with an active linked session, **when** the booking is cancelled, **then** both booking and linked session finish as CANCELLED, and no later join may succeed.
+
+**Given** a confirmed booking that the customer is cancelling, **when** the café manager cancels or confirms the same booking at the same moment, **then** both requests are serialized by the shared lock: the second one sees the new status and receives HTTP 409, and the booking can never end up `CONFIRMED` while its session is `CANCELLED`.
+
+**Given** a session with a waiting list, **when** its booking is cancelled, **then** the session is `CANCELLED`, the waiting list is empty, and every participant and waitlisted user (except whoever cancelled) receives `SESSION_CANCELLED`.
 
 **Testing note:** The cancellation-versus-new-join race still requires a fresh-fixture test with a joiner who has not already joined; do not claim this particular race is fully verified.

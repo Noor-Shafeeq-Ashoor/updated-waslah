@@ -8,6 +8,13 @@ import com.ga.waslah.model.Booking;
 import com.ga.waslah.model.BookingStatus;
 import com.ga.waslah.model.StudySpace;
 import com.ga.waslah.model.StudySessionStatus;
+import com.ga.waslah.model.StudySession;
+import com.ga.waslah.model.SessionEventType;
+import com.ga.waslah.model.SessionParticipant;
+import com.ga.waslah.model.SessionWaitlist;
+import com.ga.waslah.repository.SessionParticipantRepository;
+import com.ga.waslah.repository.SessionWaitlistRepository;
+import java.util.ArrayList;
 import com.ga.waslah.model.User;
 import com.ga.waslah.repository.BookingRepository;
 import com.ga.waslah.repository.StudySpaceRepository;
@@ -44,6 +51,9 @@ public class BookingService {
     private final ApplicationEventPublisher eventPublisher;
     private final StudySessionRepository studySessionRepository;
     private final ParticipationLockService participationLockService;
+    private final SessionParticipantRepository sessionParticipantRepository;
+    private final SessionWaitlistRepository sessionWaitlistRepository;
+    private final SessionActivityService sessionActivityService;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -52,7 +62,10 @@ public class BookingService {
             AuditService auditService,
             ApplicationEventPublisher eventPublisher,
             StudySessionRepository studySessionRepository,
-            ParticipationLockService participationLockService
+            ParticipationLockService participationLockService,
+            SessionParticipantRepository sessionParticipantRepository,
+            SessionWaitlistRepository sessionWaitlistRepository,
+            SessionActivityService sessionActivityService
 
     ) {
         this.bookingRepository = bookingRepository;
@@ -62,6 +75,9 @@ public class BookingService {
         this.eventPublisher = eventPublisher;
         this.studySessionRepository = studySessionRepository;
         this.participationLockService = participationLockService;
+        this.sessionParticipantRepository = sessionParticipantRepository;
+        this.sessionWaitlistRepository = sessionWaitlistRepository;
+        this.sessionActivityService = sessionActivityService;
     }
 
 
@@ -351,15 +367,9 @@ public class BookingService {
             throw new ConflictException("Booking is already cancelled");
         }
 
-        // 4. Keep session/participant history, but make the session inactive.
-        studySessionRepository.findByBooking_Id(id).ifPresent(session -> {
-            if (session.getStatus() == StudySessionStatus.COMPLETED) {
-                throw new ConflictException(
-                        "Cannot cancel a booking with a completed study session"
-                );
-            }
-            session.setStatus(StudySessionStatus.CANCELLED);
-        });
+        // 4. Keep session/participant history, but make the session inactive
+        //    and tell everyone who was in or waiting for it.
+        cancelLinkedSession(booking, username);
 
         // 5. Both status changes commit or roll back together.
         booking.setStatus(BookingStatus.CANCELLED);
@@ -449,6 +459,13 @@ public class BookingService {
             );
         }
 
+        // A booking whose time has already passed can no longer be confirmed.
+        if (!booking.getEndTime().isAfter(LocalDateTime.now())) {
+            throw new ConflictException(
+                    "This booking has already ended and cannot be confirmed"
+            );
+        }
+
         // Update booking status.
         booking.setStatus(BookingStatus.CONFIRMED);
 
@@ -467,4 +484,102 @@ public class BookingService {
         return toResponse(savedBooking);
     }
 
+
+    /**
+     * Lets the assigned cafe manager reject a PENDING booking or cancel a
+     * CONFIRMED one. Uses the same lock order as every other writer
+     * (advisory lock first, booking row second), so it cannot overwrite a
+     * concurrent cancellation or confirmation.
+     *
+     * <p>Cancelling a confirmed booking also cancels its linked study session.</p>
+     */
+    @Transactional
+    public BookingResponse rejectBooking(Long bookingId, String managerUsername) {
+
+        participationLockService.lockStudySessionWrites();
+
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Booking not found")
+                );
+
+        String assignedManager = booking.getStudySpace()
+                .getCafe()
+                .getManager()
+                .getUsername();
+
+        if (!assignedManager.equals(managerUsername)) {
+            throw new ForbiddenException(
+                    "You are not allowed to manage this booking"
+            );
+        }
+
+        BookingStatus previous = booking.getStatus();
+
+        if (previous != BookingStatus.PENDING
+                && previous != BookingStatus.CONFIRMED) {
+            throw new ConflictException(
+                    "Only pending or confirmed bookings can be rejected or cancelled"
+            );
+        }
+
+        cancelLinkedSession(booking, managerUsername);
+
+        booking.setStatus(BookingStatus.CANCELLED);
+        Booking savedBooking = bookingRepository.save(booking);
+
+        auditService.log(
+                managerUsername,
+                previous == BookingStatus.PENDING
+                        ? "BOOKING_REJECTED"
+                        : "BOOKING_CANCELLED_BY_MANAGER",
+                "BOOKING",
+                savedBooking.getId()
+        );
+
+        log.info("Booking {} ({}) set to CANCELLED by its cafe manager",
+                bookingId, previous);
+
+        return toResponse(savedBooking);
+    }
+
+    /**
+     * Cancels the study session linked to a booking (if it is still active),
+     * removes its waitlist, records the change in the session history and
+     * notifies everyone affected. Must be called while holding the
+     * participation lock.
+     */
+    private void cancelLinkedSession(Booking booking, String actor) {
+        studySessionRepository.findByBooking_Id(booking.getId()).ifPresent(session -> {
+            if (session.getStatus() == StudySessionStatus.COMPLETED) {
+                throw new ConflictException(
+                        "Cannot cancel a booking with a completed study session"
+                );
+            }
+            if (session.getStatus() == StudySessionStatus.CANCELLED) {
+                return;
+            }
+
+            List<String> affected = new ArrayList<>();
+            for (SessionParticipant participant
+                    : sessionParticipantRepository.findBySession_Id(session.getId())) {
+                affected.add(participant.getUser().getUsername());
+            }
+            for (SessionWaitlist waiting
+                    : sessionWaitlistRepository.findBySession_IdOrderByPositionAsc(session.getId())) {
+                affected.add(waiting.getUser().getUsername());
+            }
+            affected.remove(actor);
+
+            // No one can be promoted into a cancelled session.
+            sessionWaitlistRepository.deleteBySession_Id(session.getId());
+            session.setStatus(StudySessionStatus.CANCELLED);
+
+            sessionActivityService.record(session, null, SessionEventType.CANCELLED,
+                    "Booking " + booking.getId() + " was cancelled by " + actor,
+                    affected,
+                    "The study session \"" + session.getTitle()
+                            + "\" was cancelled because its booking was cancelled");
+        });
+    }
 }

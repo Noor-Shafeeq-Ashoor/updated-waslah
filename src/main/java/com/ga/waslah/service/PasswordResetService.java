@@ -40,12 +40,13 @@ public class PasswordResetService {
 
     public void createAndSendResetToken(String email) {
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "User with this email does not exist"
-                        )
-                );
+        // Do not reveal whether the address belongs to an account: an unknown
+        // address is silently ignored and the caller gets the same answer.
+        User user = userRepository.findByEmail(email).orElse(null);
+
+        if (user == null) {
+            return;
+        }
 
         // Remove any previous reset token.
         tokenRepository.deleteByUser(user);

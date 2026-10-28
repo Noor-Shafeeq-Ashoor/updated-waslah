@@ -1,10 +1,7 @@
 package com.ga.waslah.service;
 
 import com.ga.waslah.dto.BookingResponse;
-import com.ga.waslah.exception.ForbiddenException;
-import com.ga.waslah.exception.ResourceNotFoundException;
 import com.ga.waslah.model.Booking;
-import com.ga.waslah.model.BookingStatus;
 import com.ga.waslah.repository.BookingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,7 +13,7 @@ import java.util.List;
 public class CafeManagerBookingService {
 
     private final BookingRepository bookingRepository;
-    private final AuditService auditService;
+    private final BookingService bookingService;
     private final NotificationService notificationService;
 
     // =========================
@@ -36,113 +33,58 @@ public class CafeManagerBookingService {
     // CONFIRM BOOKING
     // =========================
 
+    /**
+     * Confirms a pending booking. The state change itself is done by
+     * {@link BookingService#confirmBooking}, which takes the shared advisory
+     * lock and a row lock, so it cannot race with a cancellation. This class
+     * only adds the notification.
+     */
     public BookingResponse confirmBooking(
             Long bookingId,
             String username
     ) {
 
-        Booking booking = getManagerBooking(
+        BookingResponse response = bookingService.confirmBooking(
                 bookingId,
                 username
         );
 
-        if (booking.getStatus() != BookingStatus.PENDING) {
-            throw new ForbiddenException(
-                    "Only pending bookings can be confirmed"
-            );
-        }
-
-        booking.setStatus(BookingStatus.CONFIRMED);
-
-        Booking saved = bookingRepository.save(booking);
-
-        auditService.log(
-                username,
-                "BOOKING_CONFIRMED",
-                "BOOKING",
-                saved.getId()
-        );
-
         notificationService.sendToUser(
-                saved.getUser().getUsername(),
+                response.getUsername(),
                 "BOOKING_CONFIRMED",
                 "Your booking has been confirmed. Booking ID: "
-                        + saved.getId()
+                        + response.getId()
         );
 
-        return toResponse(saved);
+        return response;
     }
 
     // =========================
-    // REJECT BOOKING
+    // REJECT / CANCEL BOOKING
     // =========================
 
+    /**
+     * Rejects a pending booking or cancels a confirmed one (together with its
+     * study session). See {@link BookingService#rejectBooking}.
+     */
     public BookingResponse rejectBooking(
             Long bookingId,
             String username
     ) {
 
-        Booking booking = getManagerBooking(
+        BookingResponse response = bookingService.rejectBooking(
                 bookingId,
                 username
         );
 
-        if (booking.getStatus() != BookingStatus.PENDING) {
-            throw new ForbiddenException(
-                    "Only pending bookings can be rejected"
-            );
-        }
-
-        booking.setStatus(BookingStatus.CANCELLED);
-
-        Booking saved = bookingRepository.save(booking);
-
-        auditService.log(
-                username,
-                "BOOKING_REJECTED",
-                "BOOKING",
-                saved.getId()
-        );
-
         notificationService.sendToUser(
-                saved.getUser().getUsername(),
+                response.getUsername(),
                 "BOOKING_REJECTED",
-                "Your booking was rejected by the cafe. Booking ID: "
-                        + saved.getId()
+                "Your booking was cancelled by the cafe. Booking ID: "
+                        + response.getId()
         );
 
-        return toResponse(saved);
-    }
-
-    // =========================
-    // CHECK MANAGER OWNERSHIP
-    // =========================
-
-    private Booking getManagerBooking(
-            Long bookingId,
-            String username
-    ) {
-
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Booking not found"
-                        ));
-
-        boolean belongsToManager =
-                booking.getStudySpace()
-                        .getCafe()
-                        .getManager()
-                        .getUsername()
-                        .equals(username);
-
-        if (!belongsToManager) {
-            throw new ForbiddenException(
-                    "You are not allowed to manage this booking"
-            );
-        }
-
-        return booking;
+        return response;
     }
 
     // =========================

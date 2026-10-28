@@ -29,6 +29,9 @@ public class RateLimitingInterceptor implements HandlerInterceptor {
 
     private static final long WINDOW_SECONDS = 60;
 
+    // Above this many tracked clients, counters from finished windows are removed.
+    private static final int CLEANUP_THRESHOLD = 1000;
+
     /**
      * Checks whether a request exceeds the limit for its endpoint.
      *
@@ -59,6 +62,16 @@ public class RateLimitingInterceptor implements HandlerInterceptor {
             limit = RESET_PASSWORD_LIMIT;
         } else {
             return true;
+        }
+
+        // Without this the map would keep one entry for every address ever seen.
+        if (requests.size() > CLEANUP_THRESHOLD) {
+            long cutoff = Instant.now().getEpochSecond() - WINDOW_SECONDS;
+            requests.entrySet().removeIf(entry -> {
+                synchronized (entry.getValue()) {
+                    return entry.getValue().startTime < cutoff;
+                }
+            });
         }
 
         // Keep a separate counter for each client address and endpoint.

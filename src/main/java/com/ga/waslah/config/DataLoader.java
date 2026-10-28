@@ -158,16 +158,7 @@ public class DataLoader implements CommandLineRunner {
     /**
      * Finds a seed user by username or email, or creates it if missing.
      * Existing accounts are not overwritten or assigned a new password.
-     *
-     * @param username unique username for the seed account
-     * @param email unique email for the seed account
-     * @param rawPassword configured password for a new account
-     * @param role role assigned to a newly created account
-     * @param firstName profile first name
-     * @param lastName profile last name
-     * @return the existing or newly created user, or {@code null} if the
-     * password is not configured or an email already belongs to another user
-     */
+  */
     private User seedUser(
             String username,
             String email,
@@ -214,13 +205,7 @@ public class DataLoader implements CommandLineRunner {
 
     /**
      * Finds a cafe belonging to the specified manager or creates it.
-     *
-     * @param manager user who manages the cafe
-     * @param name cafe name used to identify the seed record
-     * @param description cafe description
-     * @param location cafe location
-     * @return the existing or newly created cafe
-     */
+   */
     private Cafe seedCafe(User manager, String name, String description, String location) {
         List<Cafe> managedCafes = cafeRepository.findByManager(manager);
 
@@ -244,13 +229,7 @@ public class DataLoader implements CommandLineRunner {
 
     /**
      * Finds a study space by its cafe and name, or creates it.
-     *
-     * @param cafe cafe that owns the study space
-     * @param name study-space name
-     * @param capacity maximum number of people
-     * @param pricePerHour hourly price in the application's configured currency
-     * @return the existing or newly created study space
-     */
+  */
     private StudySpace seedStudySpace(Cafe cafe, String name, int capacity, double pricePerHour) {
         for (StudySpace space : studySpaceRepository.findAll()) {
             if (space.getCafe() != null

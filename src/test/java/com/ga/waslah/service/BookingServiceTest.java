@@ -3,7 +3,16 @@ package com.ga.waslah.service;
 import com.ga.waslah.dto.BookingRequest;
 import com.ga.waslah.dto.BookingResponse;
 import com.ga.waslah.event.BookingCreatedEvent;
+import com.ga.waslah.exception.ConflictException;
 import com.ga.waslah.exception.ForbiddenException;
+import com.ga.waslah.model.SessionEventType;
+import com.ga.waslah.model.SessionParticipant;
+import com.ga.waslah.model.SessionWaitlist;
+import com.ga.waslah.model.StudySession;
+import com.ga.waslah.model.StudySessionStatus;
+import com.ga.waslah.repository.SessionParticipantRepository;
+import com.ga.waslah.repository.SessionWaitlistRepository;
+import com.ga.waslah.repository.StudySessionRepository;
 import com.ga.waslah.model.Booking;
 import com.ga.waslah.model.BookingStatus;
 import com.ga.waslah.model.Cafe;
@@ -29,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,6 +60,21 @@ class BookingServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private StudySessionRepository studySessionRepository;
+
+    @Mock
+    private ParticipationLockService participationLockService;
+
+    @Mock
+    private SessionParticipantRepository sessionParticipantRepository;
+
+    @Mock
+    private SessionWaitlistRepository sessionWaitlistRepository;
+
+    @Mock
+    private SessionActivityService sessionActivityService;
 
     @InjectMocks
     private BookingService bookingService;
@@ -133,7 +158,7 @@ class BookingServiceTest {
                 .thenReturn(true);
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConflictException.class,
                 () -> bookingService.createBooking("noor", request(start, end))
         );
 
@@ -161,7 +186,7 @@ class BookingServiceTest {
         when(studySpaceRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(space));
 
         assertThrows(
-                ForbiddenException.class,
+                ConflictException.class,
                 () -> bookingService.createBooking("noor", request(start, end))
         );
 
@@ -173,7 +198,7 @@ class BookingServiceTest {
     @Test
     void shouldCancelOwnPendingBooking() {
         Booking booking = bookingOwnedBy(user, BookingStatus.PENDING);
-        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
         when(bookingRepository.save(booking)).thenReturn(booking);
 
         BookingResponse response = bookingService.cancelBooking(10L, "noor");
@@ -187,7 +212,7 @@ class BookingServiceTest {
         User other = new User();
         other.setUsername("sara");
         Booking booking = bookingOwnedBy(other, BookingStatus.PENDING);
-        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
 
         assertThrows(
                 ForbiddenException.class,
@@ -200,10 +225,10 @@ class BookingServiceTest {
     @Test
     void shouldNotCancelCompletedBooking() {
         Booking booking = bookingOwnedBy(user, BookingStatus.COMPLETED);
-        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
 
         assertThrows(
-                ForbiddenException.class,
+                ConflictException.class,
                 () -> bookingService.cancelBooking(10L, "noor")
         );
 
@@ -213,11 +238,156 @@ class BookingServiceTest {
     @Test
     void shouldNotCancelAlreadyCancelledBooking() {
         Booking booking = bookingOwnedBy(user, BookingStatus.CANCELLED);
-        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+
+        assertThrows(
+                ConflictException.class,
+                () -> bookingService.cancelBooking(10L, "noor")
+        );
+
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void cancellingBookingCancelsLinkedSessionClearsWaitlistAndNotifiesOthers() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.CONFIRMED);
+        StudySession session = new StudySession();
+        session.setId(5L);
+        session.setTitle("Algorithms revision");
+        session.setStatus(StudySessionStatus.FULL);
+
+        User student = new User();
+        student.setUsername("sara");
+        User waiting = new User();
+        waiting.setUsername("ali");
+
+        SessionParticipant organizerSeat = new SessionParticipant();
+        organizerSeat.setUser(user);
+        SessionParticipant studentSeat = new SessionParticipant();
+        studentSeat.setUser(student);
+        SessionWaitlist waitEntry = new SessionWaitlist();
+        waitEntry.setUser(waiting);
+
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(booking)).thenReturn(booking);
+        when(studySessionRepository.findByBooking_Id(10L)).thenReturn(Optional.of(session));
+        when(sessionParticipantRepository.findBySession_Id(5L))
+                .thenReturn(List.of(organizerSeat, studentSeat));
+        when(sessionWaitlistRepository.findBySession_IdOrderByPositionAsc(5L))
+                .thenReturn(List.of(waitEntry));
+
+        bookingService.cancelBooking(10L, "noor");
+
+        assertEquals(StudySessionStatus.CANCELLED, session.getStatus());
+        verify(sessionWaitlistRepository).deleteBySession_Id(5L);
+        // The owner who cancelled is not notified about their own action.
+        verify(sessionActivityService).record(
+                eq(session), eq(null), eq(SessionEventType.CANCELLED),
+                anyString(), eq(List.of("sara", "ali")), anyString());
+    }
+
+    @Test
+    void cancellationShouldLockBeforeReadingTheBooking() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.PENDING);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(booking)).thenReturn(booking);
+
+        bookingService.cancelBooking(10L, "noor");
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(
+                participationLockService, bookingRepository);
+        order.verify(participationLockService).lockStudySessionWrites();
+        order.verify(bookingRepository).findByIdForUpdate(10L);
+    }
+
+    // ---------------------------------------------------------------- manager
+
+    @Test
+    void managerShouldRejectPendingBooking() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.PENDING);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(booking)).thenReturn(booking);
+
+        BookingResponse response = bookingService.rejectBooking(10L, "cafe.manager");
+
+        assertEquals(BookingStatus.CANCELLED, response.getStatus());
+        verify(auditService).log("cafe.manager", "BOOKING_REJECTED", "BOOKING", 10L);
+    }
+
+    @Test
+    void managerShouldCancelConfirmedBooking() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.CONFIRMED);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(booking)).thenReturn(booking);
+
+        BookingResponse response = bookingService.rejectBooking(10L, "cafe.manager");
+
+        assertEquals(BookingStatus.CANCELLED, response.getStatus());
+        verify(auditService).log(
+                "cafe.manager", "BOOKING_CANCELLED_BY_MANAGER", "BOOKING", 10L);
+    }
+
+    @Test
+    void managerShouldNotRejectBookingOfAnotherCafe() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.PENDING);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
 
         assertThrows(
                 ForbiddenException.class,
-                () -> bookingService.cancelBooking(10L, "noor")
+                () -> bookingService.rejectBooking(10L, "other.manager")
+        );
+
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void managerShouldNotRejectAnAlreadyCancelledBooking() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.CANCELLED);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+
+        assertThrows(
+                ConflictException.class,
+                () -> bookingService.rejectBooking(10L, "cafe.manager")
+        );
+
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void managerShouldConfirmPendingBooking() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.PENDING);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(booking)).thenReturn(booking);
+
+        BookingResponse response = bookingService.confirmBooking(10L, "cafe.manager");
+
+        assertEquals(BookingStatus.CONFIRMED, response.getStatus());
+        verify(auditService).log("cafe.manager", "BOOKING_CONFIRMED", "BOOKING", 10L);
+    }
+
+    @Test
+    void managerShouldNotConfirmBookingThatAlreadyEnded() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.PENDING);
+        booking.setStartTime(LocalDateTime.now().minusHours(3));
+        booking.setEndTime(LocalDateTime.now().minusHours(2));
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+
+        assertThrows(
+                ConflictException.class,
+                () -> bookingService.confirmBooking(10L, "cafe.manager")
+        );
+
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void managerShouldNotConfirmBookingThatIsNotPending() {
+        Booking booking = bookingOwnedBy(user, BookingStatus.CONFIRMED);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+
+        assertThrows(
+                ConflictException.class,
+                () -> bookingService.confirmBooking(10L, "cafe.manager")
         );
 
         verify(bookingRepository, never()).save(any());

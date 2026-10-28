@@ -24,7 +24,23 @@ WASLAH is a single evolving Spring Boot backend application for career opportuni
 | Day 4 | FIFO Waitlist & Integration | Queue participants when full; promote eligible users after leaving; link booking cancellation to session cancellation | Completed |
 | Day 5 | Concurrent Testing | Execute simultaneous join, overlapping join and concurrent leave tests; inspect database results | Completed | 
 | Day 6 | Documentation & API Review | Integrate README, ERD, business rules, user stories; review Swagger and logs | Completed |
-| Day 7 | Final Verification & Presentation | Improve cancellation-versus-new-join race test; final regression checks; capture demonstration evidence and prepare presentation | Completed |
+| Day 7 | Final Verification & Presentation | Improve cancellation-versus-new-join race test; final regression checks; capture demonstration evidence and prepare presentation | In progress — the cancellation-versus-new-join race still needs a fresh-fixture run (see the verification table) |
+
+## Development Plan — Project 3 iteration (review follow-up)
+
+| Task | Area | Status |
+|---|---|---|
+| Route café-manager confirm/reject through `BookingService` (shared advisory lock + booking row lock) so it cannot overwrite a concurrent cancellation | Concurrency fix | Done in code; needs a run against PostgreSQL |
+| Let a waitlisted user leave the waiting list; clear the waitlist when a session is cancelled or completed | Business rule | Done in code; unit-tested |
+| Cancel unanswered `PENDING` bookings after their end time; refuse to confirm ended bookings | Business rule | Done in code; unit-tested |
+| Café manager can cancel a `CONFIRMED` booking (cancels the session, notifies participants) | New workflow | Done in code; unit-tested |
+| New entities `SessionEvent` and `Notification` (total 17, five new in Project 3) | Data model | Done; ERD updated |
+| Session events over SSE (`SESSION_*`), stored notifications, `GET /api/notifications`, `GET /api/study-sessions/{id}/events` | API / real-time | Done in code |
+| `CompletableFuture` fan-out (store + push) on `notificationExecutor` | Async | Done; unit-tested |
+| JWT `role` claim for the frontend; uniform login / forgot-password answers; rate-limiter cleanup | Security | Done in code; unit-tested where noted in the README |
+| Unit tests: bookings, sessions, listener, thread-safety, race demo, JWT; refresh stale `BookingServiceTest` / `CafeManagerBookingServiceTest` | Testing | Written; **not yet executed** (no build environment was available when they were written) |
+| Run all tests, then the `*IT` concurrency tests on fresh fixtures, including the cancellation-versus-new-join race | Verification | **Pending** |
+| Add Testcontainers PostgreSQL so concurrency tests run in `mvn verify` | Testing | Future |
 
 ## Scope and Key Features
 
@@ -51,7 +67,7 @@ WASLAH is a single evolving Spring Boot backend application for career opportuni
 | Two participants leave concurrently | Both requests HTTP 204; follow-up database verification reported correct | Passed                     |
 | FIFO waitlist promotion | Database state verified after departures | Passed                     |
 | Booking cancellation concurrent with join | Cancellation HTTP 200; join HTTP 409 because joiner had already joined | Passed                     |
-| Booking/session final cancellation state | Both statuses reported `CANCELLED` in database verification | V Passed |
+| Booking/session final cancellation state | Both statuses reported `CANCELLED` in database verification | Passed |
 
 The concurrency tests exercise the running API against PostgreSQL using `ExecutorService`, `Callable`, `Future`, and `CountDownLatch`. Test fixtures are stateful and should be refreshed before reruns. Do not treat a passing test with an already-joined user as proof of the cancellation-versus-new-join race.
 

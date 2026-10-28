@@ -2,6 +2,7 @@ package com.ga.waslah.service;
 
 import com.ga.waslah.dto.CreateStudySessionRequest;
 import com.ga.waslah.dto.JoinSessionResponse;
+import com.ga.waslah.dto.SessionEventResponse;
 import com.ga.waslah.dto.StudySessionResponse;
 import com.ga.waslah.exception.ConflictException;
 import com.ga.waslah.exception.ForbiddenException;
@@ -39,6 +40,8 @@ public class StudySessionService {
     private final UserRepository userRepository;
     private final SessionWaitlistRepository waitlistRepository;
     private final ParticipationLockService participationLockService;
+    private final SessionActivityService sessionActivityService;
+    private final SessionEventRepository sessionEventRepository;
 
     /** Creates a session from a confirmed booking and reserves the first seat for its organizer. */
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -80,6 +83,9 @@ public class StudySessionService {
         firstParticipant.setUser(organizer);
         participantRepository.save(firstParticipant);
 
+        sessionActivityService.record(saved, organizer, SessionEventType.CREATED,
+                "Session created with capacity " + saved.getCapacity());
+
         log.info("Created study session {} for organizer {}", saved.getId(), username);
         return toResponse(saved);
     }
@@ -114,6 +120,10 @@ public class StudySessionService {
             }
             addParticipant(session, user);
             updateCapacityStatus(session);
+            sessionActivityService.record(session, user, SessionEventType.JOINED,
+                    "Joined; status now " + session.getStatus(),
+                    List.of(session.getOrganizer().getUsername()),
+                    username + " joined your study session \"" + session.getTitle() + "\"");
             log.info("User {} joined session {}", username, sessionId);
             return new JoinSessionResponse(sessionId, "JOINED",
                     "You have successfully joined the study session", null);
@@ -129,6 +139,10 @@ public class StudySessionService {
         entry.setUser(user);
         entry.setPosition(nextPosition);
         waitlistRepository.save(entry);
+        sessionActivityService.record(session, user, SessionEventType.WAITLISTED,
+                "Waitlist position " + nextPosition,
+                List.of(username),
+                "You are number " + nextPosition + " on the waiting list for \"" + session.getTitle() + "\"");
         log.info("User {} waitlisted for session {} at position {}", username, sessionId, nextPosition);
         return new JoinSessionResponse(sessionId, "WAITLISTED",
                 "The session has a waiting list; you have been added to it", nextPosition);
@@ -151,11 +165,30 @@ public class StudySessionService {
         }
         SessionParticipant participant = participantRepository
                 .findBySession_IdAndUser_Id(sessionId, user.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("You are not a participant of this session"));
+                .orElse(null);
+
+        if (participant == null) {
+            // Not a participant: a waitlisted user may leave the queue instead.
+            SessionWaitlist waiting = waitlistRepository
+                    .findBySession_IdAndUser_Id(sessionId, user.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "You are not a participant or waitlisted in this session"));
+            waitlistRepository.delete(waiting);
+            sessionActivityService.record(session, user, SessionEventType.LEFT_WAITLIST,
+                    "Left the waiting list from position " + waiting.getPosition(),
+                    List.of(username),
+                    "You have left the waiting list for \"" + session.getTitle() + "\"");
+            log.info("User {} left the waitlist of session {}", username, sessionId);
+            return;
+        }
 
         participantRepository.delete(participant);
         participantRepository.flush();
         session.setStatus(StudySessionStatus.OPEN);
+        sessionActivityService.record(session, user, SessionEventType.LEFT,
+                "Left the session",
+                List.of(session.getOrganizer().getUsername()),
+                username + " left your study session \"" + session.getTitle() + "\"");
         promoteEligibleWaiters(session);
         updateCapacityStatus(session);
         log.info("User {} left session {}", username, sessionId);
@@ -193,6 +226,10 @@ public class StudySessionService {
             }
             addParticipant(session, candidate);
             waitlistRepository.delete(entry);
+            sessionActivityService.record(session, candidate, SessionEventType.PROMOTED,
+                    "Promoted from waitlist position " + entry.getPosition(),
+                    List.of(candidate.getUsername()),
+                    "A seat opened up: you have joined \"" + session.getTitle() + "\"");
             count++;
             log.info("Promoted user {} in session {}", candidate.getUsername(), session.getId());
         }
@@ -244,6 +281,32 @@ public class StudySessionService {
                 session.getCapacity(), session.getStatus(), booking.getId(),
                 booking.getStudySpace().getId(), session.getOrganizer().getUsername(),
                 booking.getStartTime(), booking.getEndTime());
+    }
+
+    /**
+     * Returns the history of a session, oldest first. Only the organizer,
+     * current participants, waitlisted users and administrators may read it.
+     */
+    @Transactional(readOnly = true)
+    public List<SessionEventResponse> listEvents(Long sessionId, String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        StudySession session = studySessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Study session not found"));
+
+        boolean allowed = user.getRole() == Role.ADMIN
+                || session.getOrganizer().getId().equals(user.getId())
+                || participantRepository.existsBySession_IdAndUser_Id(sessionId, user.getId())
+                || waitlistRepository.existsBySession_IdAndUser_Id(sessionId, user.getId());
+
+        if (!allowed) {
+            throw new ForbiddenException("You are not allowed to view this session's history");
+        }
+
+        return sessionEventRepository.findBySession_IdOrderByIdAsc(sessionId)
+                .stream()
+                .map(SessionEventResponse::from)
+                .toList();
     }
 
     /**

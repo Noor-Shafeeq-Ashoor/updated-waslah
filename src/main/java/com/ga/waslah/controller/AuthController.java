@@ -46,12 +46,11 @@ public class AuthController {
 
     @Operation(
             summary = "Log in and receive a JWT",
-            description = "Authenticates a verified, active account and returns a 24-hour JWT. An unknown username returns 400; a wrong password returns 401; unverified, inactive or temporarily locked accounts return 403. Three wrong passwords lock the account for 1 minute. Limited to 5 requests per minute per IP."
+            description = "Authenticates a verified, active account and returns a 24-hour JWT and the account role. An unknown username or a wrong password returns 401 (same message, so usernames cannot be probed); unverified, inactive or temporarily locked accounts return 403. Three wrong passwords lock the account for 1 minute. Limited to 5 requests per minute per IP."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Login successful, JWT returned"),
-            @ApiResponse(responseCode = "400", description = "Unknown username"),
-            @ApiResponse(responseCode = "401", description = "Wrong password"),
+            @ApiResponse(responseCode = "401", description = "Unknown username or wrong password"),
             @ApiResponse(responseCode = "403", description = "Email not verified, account inactive or temporarily locked"),
             @ApiResponse(responseCode = "429", description = "Rate limit exceeded")
     })
@@ -65,7 +64,9 @@ public class AuthController {
                 loginRequest.getUsername()
         ).orElseThrow(() -> {
             log.warn("Login failed: username not found");
-            return new BadRequestException(
+            // Same status and message as a wrong password, so the response
+            // does not reveal whether the username exists.
+            return new BadCredentialsException(
                     "Invalid username or password"
             );
         });
@@ -114,10 +115,11 @@ public class AuthController {
             log.info("Login successful");
 
             String token = jwtService.generateToken(
-                    authentication.getName()
+                    authentication.getName(),
+                    user.getRole().name()
             );
 
-            return new LoginResponse(token);
+            return new LoginResponse(token, user.getRole().name());
 
         } catch (BadCredentialsException exception) {
 
@@ -165,12 +167,11 @@ public class AuthController {
 
     @Operation(
             summary = "Request a password-reset email",
-            description = "Creates a single-use reset token (valid 15 minutes) and emails it to the address. Limited to 3 requests per minute per IP."
+            description = "Creates a single-use reset token (valid 15 minutes) and emails it to the address. The response is the same whether or not the address belongs to an account, so accounts cannot be discovered. Limited to 3 requests per minute per IP."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Reset email sent"),
+            @ApiResponse(responseCode = "200", description = "Request accepted (an email is sent only if the address is registered)"),
             @ApiResponse(responseCode = "400", description = "Validation error or invalid request"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
             @ApiResponse(responseCode = "429", description = "Rate limit exceeded")
     })
     @SecurityRequirements

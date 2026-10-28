@@ -34,7 +34,7 @@ import java.util.List;
 public class StudySessionController {
 
     private final StudySessionService studySessionService;
-  @Operation(
+    @Operation(
             summary = "Create a study session",
             description = "Creates a group study session for an existing "
                     + "confirmed booking owned by the authenticated user."
@@ -116,6 +116,25 @@ public class StudySessionController {
         return ResponseEntity.noContent().build();
     }
 
+
+    @Operation(
+            summary = "Show a session's history",
+            description = "Everything that happened to the session, oldest first (created, joined, waitlisted, promoted, left, cancelled, completed). Rows are written under the same lock as the change itself, so the order is the order in which concurrent requests were actually applied. Visible to the organizer, participants, waitlisted users and admins."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "History entries"),
+            @ApiResponse(responseCode = "401", description = "Authentication required"),
+            @ApiResponse(responseCode = "403", description = "Not involved in this session"),
+            @ApiResponse(responseCode = "404", description = "Session not found")
+    })
+    @GetMapping("/{id}/events")
+    public ResponseEntity<List<com.ga.waslah.dto.SessionEventResponse>> getSessionEvents(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(
+                studySessionService.listEvents(id, authentication.getName()));
+    }
 
     @Operation(
             summary = "List study sessions",
