@@ -36,6 +36,15 @@ public class Job extends AuditableEntity{
 
     private Double salary;
 
+    @Column(nullable = false, columnDefinition = "integer default 1")
+    private Integer vacancies = 1;
+
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private Integer filledVacancies = 0;
+
+
+
+
     @Column(nullable = false)
     private LocalDateTime deadline;
 

@@ -102,6 +102,27 @@ public class JobController {
     }
 
     // =========================
+    // GET MY JOBS
+    // =========================
+
+    @Operation(
+            summary = "List my jobs (employer)",
+            description = "All jobs posted by the caller, open and closed, newest first."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "The employer's jobs"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid or expired JWT"),
+            @ApiResponse(responseCode = "403", description = "Not an employer")
+    })
+    @GetMapping("/my")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<List<JobResponse>> getMyJobs(
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(jobService.getMyJobs(authentication.getName()));
+    }
+
+    // =========================
     // GET BY ID
     // =========================
 

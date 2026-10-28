@@ -18,3 +18,12 @@ The existing backend had POST create/join/leave study-session endpoints but no G
 Some management workflows (full café CRUD, study-space management, all admin tools, live notification UI) are not yet surfaced in the React UI; their existing backend endpoints remain available through Swagger. No demo records are fabricated: empty states are shown when the database has no results. Live capacity counts and waitlist positions are not available from the current study-session listing DTO; the join action uses the backend's `JOINED`/`WAITLISTED` response. The session list polls every 15 seconds. External Unsplash photos require internet access.
 
 **Verification:** `npm run build` verifies frontend TypeScript and bundling. Full end-to-end flows require a running backend, valid users, and suitable database fixtures.
+
+## Role-based areas
+- Member (`USER`): `/dashboard`, jobs, applications, cafés, bookings, study sessions, partner requests.
+- Admin: `/admin` (stats), `/admin/users`, `/admin/requests`, `/admin/audit`.
+- Employer: `/employer`, `/employer/jobs` (jobs and applicants).
+- Café manager: `/manager`, `/manager/spaces`, `/manager/bookings`.
+Route guards live in `src/auth.tsx`; the backend `@PreAuthorize` rules remain the real protection.
+Only a confirmed booking, still in the future, in a space with 2 or more seats can start a study session.
+After an admin approves a role request the user signs in again to get the new role.

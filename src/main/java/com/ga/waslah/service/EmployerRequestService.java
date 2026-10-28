@@ -141,6 +141,16 @@ public class EmployerRequestService {
     }
 
     /**
+     * Retrieves employer requests with the given status, or all of them when
+     * {@code status} is null. Used by the admin dashboard.
+     */
+    public List<EmployerRequest> getRequests(EmployerRequestStatus status) {
+        return status == null
+                ? employerRequestRepository.findAll()
+                : employerRequestRepository.findByStatus(status);
+    }
+
+    /**
      * Approves a pending employer request and grants the user
      * the EMPLOYER role.
      *
@@ -254,7 +264,8 @@ public class EmployerRequestService {
                 request.getCompanyDescription(),
                 request.getJobTypes(),
                 request.getCommercialRegistration(),
-                request.getStatus()
+                request.getStatus(),
+                request.getUser() == null ? null : request.getUser().getUsername()
         );
     }
 

@@ -56,4 +56,12 @@ public class JobRequest {
     @Future(message = "Deadline must be in the future")
     @Schema(description = "Application deadline (must be in the future)", example = "2026-12-31T23:59:00")
     private LocalDateTime deadline;
+
+    @Min(value = 1, message = "Vacancies must be at least 1")
+    @Max(value = 1000, message = "Vacancies must not exceed 1000")
+    @Schema(description = "Number of open positions (optional, default 1)", example = "3")
+    private Integer vacancies;
+
+
+
 }

@@ -280,7 +280,8 @@ public class StudySessionService {
                 session.getId(), session.getTitle(), session.getDescription(),
                 session.getCapacity(), session.getStatus(), booking.getId(),
                 booking.getStudySpace().getId(), session.getOrganizer().getUsername(),
-                booking.getStartTime(), booking.getEndTime());
+                booking.getStartTime(), booking.getEndTime(),participantRepository.countBySession_Id(session.getId()),
+                waitlistRepository.countBySession_Id(session.getId()));
     }
 
     /**

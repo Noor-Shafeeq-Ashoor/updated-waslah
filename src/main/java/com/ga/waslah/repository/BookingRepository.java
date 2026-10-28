@@ -20,6 +20,7 @@ public interface BookingRepository extends
         JpaSpecificationExecutor<Booking> {
 
     List<Booking> findByUser_Username(String username);
+    long countByStatus(BookingStatus status);
     List<Booking> findByStudySpace(StudySpace studySpace);
     boolean existsByStudySpaceAndStatusInAndStartTimeLessThanAndEndTimeGreaterThan(
             StudySpace studySpace,

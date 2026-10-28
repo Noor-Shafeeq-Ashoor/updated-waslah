@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -43,11 +44,12 @@ public class StudySessionController {
             @ApiResponse(responseCode = "201", description = "Session created"),
             @ApiResponse(responseCode = "400", description = "Invalid request"),
             @ApiResponse(responseCode = "401", description = "Authentication required"),
-            @ApiResponse(responseCode = "403", description = "Not the booking owner"),
+            @ApiResponse(responseCode = "403", description = "Not the booking owner, or the caller does not have the USER role"),
             @ApiResponse(responseCode = "404", description = "Booking not found"),
             @ApiResponse(responseCode = "409", description = "Booking not confirmed, duplicate session, or capacity exceeded")
     })
     @PostMapping
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<StudySessionResponse> createSession(
             @Valid @RequestBody CreateStudySessionRequest request,
             Authentication authentication
@@ -72,10 +74,12 @@ public class StudySessionController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Joined or waitlisted"),
             @ApiResponse(responseCode = "401", description = "Authentication required"),
+            @ApiResponse(responseCode = "403", description = "Only users with the USER role can join sessions"),
             @ApiResponse(responseCode = "404", description = "Session not found"),
             @ApiResponse(responseCode = "409", description = "Duplicate join, inactive session, or schedule conflict")
     })
     @PostMapping("/{id}/join")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<JoinSessionResponse> joinSession(
             @PathVariable Long id,
             Authentication authentication

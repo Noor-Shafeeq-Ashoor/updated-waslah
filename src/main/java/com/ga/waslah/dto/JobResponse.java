@@ -24,4 +24,7 @@ public class JobResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;
+    private Integer vacancies;
+    private Integer filledVacancies;
+
 }

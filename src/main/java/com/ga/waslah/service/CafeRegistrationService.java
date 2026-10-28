@@ -118,6 +118,26 @@ public class CafeRegistrationService {
     }
 
     // =========================
+    // GET REQUESTS BY STATUS (admin dashboard)
+    // =========================
+
+    /** All café requests, or only those with the given status when it is not null. */
+    public List<CafeRegistrationResponse> getRequests(
+            String username,
+            CafeRequestStatus status
+    ) {
+
+        checkAdmin(getUser(username));
+
+        List<com.ga.waslah.model.CafeRegistrationRequest> requests =
+                status == null
+                        ? requestRepository.findAll()
+                        : requestRepository.findByStatus(status);
+
+        return requests.stream().map(this::toResponse).toList();
+    }
+
+    // =========================
     // APPROVE / REJECT REQUEST
     // =========================
 

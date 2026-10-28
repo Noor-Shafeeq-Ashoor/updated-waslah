@@ -15,4 +15,6 @@ public interface CafeRegistrationRequestRepository
 
     // Get all requests with a specific status.
     List<CafeRegistrationRequest> findByStatus(CafeRequestStatus status);
+
+    long countByStatus(CafeRequestStatus status);
 }

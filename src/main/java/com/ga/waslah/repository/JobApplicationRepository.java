@@ -35,4 +35,9 @@ public interface JobApplicationRepository extends
      * @return the applications for the specified job
      */
     List<JobApplication> findByJobId(Long jobId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT a FROM JobApplication a WHERE a.id = :id")
+    java.util.Optional<JobApplication> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") Long id);
+
 }

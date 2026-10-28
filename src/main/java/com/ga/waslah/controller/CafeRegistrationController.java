@@ -100,6 +100,31 @@ public class CafeRegistrationController {
         );
     }
 
+    @Operation(
+            summary = "List café requests by status (admin)",
+            description = "Query parameter status = PENDING | APPROVED | REJECTED | ALL (default ALL). Complements GET /pending. ADMIN only."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of requests"),
+            @ApiResponse(responseCode = "400", description = "Unknown status value"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid or expired JWT"),
+            @ApiResponse(responseCode = "403", description = "Not an admin")
+    })
+    @GetMapping
+    public List<CafeRegistrationResponse> getRequests(
+            Authentication authentication,
+            @RequestParam(defaultValue = "ALL") String status
+    ) {
+
+        return cafeRegistrationService.getRequests(
+                authentication.getName(),
+                "ALL".equalsIgnoreCase(status)
+                        ? null
+                        : com.ga.waslah.model.CafeRequestStatus
+                        .valueOf(status.toUpperCase())
+        );
+    }
+
     // =========================
     // ADMIN - APPROVE / REJECT
     // =========================

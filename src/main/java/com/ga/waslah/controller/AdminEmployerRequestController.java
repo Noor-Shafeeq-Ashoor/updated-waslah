@@ -26,19 +26,26 @@ public class AdminEmployerRequestController {
     private final EmployerRequestService employerRequestService;
 
     @Operation(
-            summary = "List pending employer requests (admin)",
-            description = "ADMIN only."
+            summary = "List employer requests (admin)",
+            description = "Optional query parameter status = PENDING (default) | APPROVED | REJECTED | ALL. ADMIN only."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "List of pending requests"),
+            @ApiResponse(responseCode = "200", description = "List of requests with the chosen status"),
+            @ApiResponse(responseCode = "400", description = "Unknown status value"),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired JWT"),
             @ApiResponse(responseCode = "403", description = "Authenticated but not allowed (wrong role or not the owner)")
     })
     @GetMapping
-    public ResponseEntity<List<EmployerRequestResponse>> getPendingRequests() {
+    public ResponseEntity<List<EmployerRequestResponse>> getPendingRequests(
+            @RequestParam(defaultValue = "PENDING") String status
+    ) {
 
         List<EmployerRequestResponse> response =
-                employerRequestService.getPendingRequests()
+                employerRequestService.getRequests(
+                                "ALL".equalsIgnoreCase(status)
+                                        ? null
+                                        : com.ga.waslah.model.EmployerRequestStatus
+                                        .valueOf(status.toUpperCase()))
                         .stream()
                         .map(this::toDTO)
                         .toList();
@@ -104,7 +111,8 @@ public class AdminEmployerRequestController {
                 request.getCompanyDescription(),
                 request.getJobTypes(),
                 request.getCommercialRegistration(),
-                request.getStatus()
+                request.getStatus(),
+                request.getUser() == null ? null : request.getUser().getUsername()
         );
     }
 }

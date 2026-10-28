@@ -13,36 +13,27 @@ public interface JobRepository extends
         JpaRepository<Job, Long>,
         JpaSpecificationExecutor<Job> {
 
-    /**
-     * Finds jobs matching the specified status.
-     *
-     * @param status the status to search for
-     * @return a list of jobs with the specified status
-     */
-    List<Job> findByStatus(JobStatus status);
 
-    /**
-     * Finds jobs matching the specified job type.
-     *
-     * @param jobType the type of job to search for
-     * @return a list of jobs with the specified type
-     */
+    List<Job> findByStatus(JobStatus status);
+    long countByStatus(JobStatus status);
+
+    /** Locks one job row so vacancy changes for the same job run one at a time. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT j FROM Job j WHERE j.id = :id")
+    java.util.Optional<Job> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") Long id);
+
+
+
+    /** Jobs posted by one employer, newest first. */
+    List<Job> findByCreatedBy_UsernameOrderByCreatedAtDesc(String username);
+
     List<Job> findByJobType(JobType jobType);
 
-    /**
-     * Finds jobs in the specified location, ignoring case differences.
-     *
-     * @param location the location to search for
-     * @return a list of jobs in the specified location
-     */
+
     List<Job> findByLocationIgnoreCase(String location);
 
-    /**
-     * Finds jobs whose titles contain the specified text,
-     * ignoring case differences.
-     *
-     * @param title the text to search for in job titles
-     * @return a list of matching jobs
-     */
+
     List<Job> findByTitleContainingIgnoreCase(String title);
+
+
 }

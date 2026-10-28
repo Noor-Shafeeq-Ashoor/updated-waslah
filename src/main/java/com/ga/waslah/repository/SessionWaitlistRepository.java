@@ -30,4 +30,5 @@ public interface SessionWaitlistRepository
     );
 
     void deleteBySession_Id(Long sessionId);
+    long countBySession_Id(Long sessionId);
 }

@@ -231,13 +231,7 @@ public class GlobalExceptionHandler {
     /**
      * Creates a standardized error response containing the timestamp,
      * HTTP status, error code, message, and request path.
-     *
-     * @param status the HTTP status to return
-     * @param error the application error code
-     * @param message the error message
-     * @param request the incoming HTTP request
-     * @return the response entity containing the error details
-     */
+    */
     private ResponseEntity<ErrorResponse> buildError(
             HttpStatus status,
             String error,
@@ -254,6 +248,21 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(response, status);
     }
+    /**
+          * Handles a query or path value of the wrong type, for example an unknown
+          * enum value such as ?status=FOO. Without this it would be reported as a 500.
+     * */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException exception,
+            HttpServletRequest request) {
+
+                        log.warn("Invalid value for parameter '{}': path={}",
+                                   exception.getName(), request.getRequestURI());
+                        return buildError(HttpStatus.BAD_REQUEST,"BAD_REQUEST", "Invalid value for parameter '" + exception.getName() + "'",
+                request);
+    }
+
 
     /**
      * Handles invalid method arguments that cannot be processed.

@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,11 +54,13 @@ public class BookingController {
             @ApiResponse(responseCode = "201", description = "Booking created (status PENDING)"),
             @ApiResponse(responseCode = "400", description = "Validation error, invalid time range or slot already booked"),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired JWT"),
-            @ApiResponse(responseCode = "403", description = "Study space is not available"),
+            @ApiResponse(responseCode = "403", description = "Only users with the USER role can book (admins, employers and café managers cannot)"),
+            @ApiResponse(responseCode = "409", description = "Study space is not available, or the time slot is already booked"),
             @ApiResponse(responseCode = "404", description = "Resource not found")
     })
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<BookingResponse> createBooking(
             @Valid @RequestBody BookingRequest request,
             Authentication authentication

@@ -14,6 +14,10 @@ public record StudySessionResponse(
         Long studySpaceId,
         String organizerUsername,
         LocalDateTime startTime,
-        LocalDateTime endTime
+        LocalDateTime endTime,
+        long participantCount,
+        long waitlistCount
+
+
 ) {
 }

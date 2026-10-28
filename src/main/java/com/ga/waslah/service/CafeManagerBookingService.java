@@ -101,7 +101,9 @@ public class CafeManagerBookingService {
                 booking.getStartTime(),
                 booking.getEndTime(),
                 booking.getStatus(),
-                booking.getCreatedAt()
+                booking.getCreatedAt(),
+                booking.getStudySpace().getId(),
+                booking.getStudySpace().getCapacity()
         );
     }
 }

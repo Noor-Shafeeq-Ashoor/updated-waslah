@@ -170,6 +170,7 @@ public class JobApplicationService {
     // UPDATE APPLICATION STATUS
     // =========================
 
+    @org.springframework.transaction.annotation.Transactional
     public JobApplicationResponse updateApplicationStatus(
             Long applicationId,
             ApplicationStatus newStatus,
@@ -185,13 +186,14 @@ public class JobApplicationService {
         }
 
         JobApplication application =
-                jobApplicationRepository.findById(applicationId)
+                jobApplicationRepository.findByIdForUpdate(applicationId)
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
                                         "Application not found"
                                 ));
 
-        Job job = application.getJob();
+        Job job = jobRepository.findByIdForUpdate(application.getJob().getId()) .orElseThrow(() ->
+        new ResourceNotFoundException("Job not found"));
 
         // Only the owner of the job can update applications
         if (!job.getCreatedBy()
@@ -216,6 +218,18 @@ public class JobApplicationService {
             throw new ConflictException(
                     "Application can only be accepted or rejected"
             );
+        }
+        if (newStatus == ApplicationStatus.ACCEPTED) {
+            int vacancies = job.getVacancies() == null ? 1 : job.getVacancies();
+            int filled = job.getFilledVacancies() == null ? 0 : job.getFilledVacancies();
+
+            if (filled >= vacancies) {throw new ConflictException( "All vacancies for this job are already filled");}
+            job.setFilledVacancies(filled + 1);
+            // The last vacancy closes the job automatically.
+            if (filled + 1 >= vacancies) {
+                job.setStatus(JobStatus.CLOSED);}
+
+            jobRepository.save(job);
         }
 
         application.setStatus(newStatus);

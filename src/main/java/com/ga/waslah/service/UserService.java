@@ -1,6 +1,14 @@
 package com.ga.waslah.service;
 
+import com.ga.waslah.dto.AdminUserSummary;
 import com.ga.waslah.dto.ChangePasswordRequest;
+import com.ga.waslah.dto.PageResponse;
+import com.ga.waslah.util.PagingUtil;
+import com.ga.waslah.util.Specs;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import java.util.Set;
 import com.ga.waslah.dto.RegisterRequest;
 import com.ga.waslah.exception.BadRequestException;
 import com.ga.waslah.exception.ConflictException;
@@ -91,7 +99,7 @@ public class UserService {
 
     /**
      * Deactivates a user account and logs who performed the action.
- */
+     */
     public void deactivateUser(Long userId, String performedBy) {
 
         User user = userRepository.findById(userId)
@@ -100,6 +108,11 @@ public class UserService {
                                 "User with ID " + userId + " was not found"
                         )
                 );
+
+        // An admin who deactivates their own account could lock everyone out.
+        if (user.getUsername().equals(performedBy)) {
+            throw new ConflictException("You cannot deactivate your own account");
+        }
 
         if (user.getStatus() == UserStatus.INACTIVE) {
             log.warn(
@@ -128,6 +141,81 @@ public class UserService {
         );
     }
 
+
+    /**
+     * Re-enables a deactivated account and clears any login lock.
+     */
+    @Transactional
+    public void reactivateUser(Long userId, String performedBy) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "User with ID " + userId + " was not found"
+                        )
+                );
+
+        if (user.getStatus() == UserStatus.ACTIVE) {
+            throw new ConflictException("User is already active");
+        }
+
+        user.setStatus(UserStatus.ACTIVE);
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
+        userRepository.save(user);
+
+        auditService.log(
+                performedBy,
+                "USER_REACTIVATED",
+                "USER",
+                user.getId()
+        );
+
+        log.info("Admin {} reactivated user account {}", performedBy, userId);
+    }
+
+    /**
+     * Lists users for the admin dashboard with optional filters.
+     *
+     * @param role optional role filter
+     * @param status optional status filter
+     * @param keyword optional text matched against username or email
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AdminUserSummary> listUsers(
+            Role role,
+            UserStatus status,
+            String keyword,
+            int page,
+            int size,
+            String sort,
+            String direction
+    ) {
+        Specification<User> specification =
+                Specs.<User>equal(role, "role")
+                        .and(Specs.equal(status, "status"))
+                        .and(
+                                Specs.<User>containsIgnoreCase(keyword, "username")
+                                        .or(Specs.containsIgnoreCase(keyword, "email"))
+                        );
+
+        Pageable pageable = PagingUtil.createPageable(
+                page, size, sort, direction, "id",
+                Set.of("id", "username", "email", "role", "status")
+        );
+
+        Page<User> result = userRepository.findAll(specification, pageable);
+
+        return new PageResponse<>(
+                result.getContent().stream().map(AdminUserSummary::from).toList(),
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.isFirst(),
+                result.isLast()
+        );
+    }
 
     /**
      * Changes a user's password after validating the current password.

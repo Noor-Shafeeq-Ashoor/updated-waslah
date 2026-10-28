@@ -19,6 +19,8 @@ public interface StudySpaceRepository extends
 
     List<StudySpace> findByAvailableTrueAndCafe_ActiveTrue();
 
+    List<StudySpace> findByCafe_IdOrderByIdAsc(Long cafeId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM StudySpace s WHERE s.id = :id")
     Optional<StudySpace> findByIdForUpdate(@Param("id") Long id);

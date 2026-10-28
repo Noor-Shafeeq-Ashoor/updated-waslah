@@ -13,4 +13,6 @@ public interface EmployerRequestRepository
     Optional<EmployerRequest> findByUserUsername(String username);
 
     List<EmployerRequest> findByStatus(EmployerRequestStatus status);
+
+    long countByStatus(EmployerRequestStatus status);
 }

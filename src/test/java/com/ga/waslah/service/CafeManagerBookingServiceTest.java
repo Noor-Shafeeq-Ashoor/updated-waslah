@@ -45,7 +45,7 @@ class CafeManagerBookingServiceTest {
                 10L, "noor", "Bahrain Study Cafe", "Quiet Desk 1",
                 LocalDateTime.now().plusDays(1),
                 LocalDateTime.now().plusDays(1).plusHours(1),
-                status, LocalDateTime.now());
+                status, LocalDateTime.now(), 1L, 4);
     }
 
     @Test

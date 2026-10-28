@@ -3,6 +3,7 @@ package com.ga.waslah.service;
 import com.ga.waslah.dto.JobRequest;
 import com.ga.waslah.dto.JobResponse;
 import com.ga.waslah.dto.PageResponse;
+import com.ga.waslah.exception.ConflictException;
 import com.ga.waslah.exception.ForbiddenException;
 import com.ga.waslah.exception.ResourceNotFoundException;
 import com.ga.waslah.model.Job;
@@ -80,6 +81,10 @@ public class JobService {
         job.setJobType(request.getJobType());
         job.setSalary(request.getSalary());
         job.setDeadline(request.getDeadline());
+        job.setVacancies(request.getVacancies() == null ? 1 : request.getVacancies());
+        job.setFilledVacancies(0);
+
+
 
         // Preserve the existing project behavior for company names.
         job.setCompanyName(request.getCompanyName());
@@ -117,20 +122,10 @@ public class JobService {
 
     /**
      * Retrieves jobs using optional filters, pagination, and sorting.
-     *
+
      * <p>Supported filters include job type, status, location, and a
      * keyword matching the job title or company name.</p>
-     *
-     * @param jobType optional job type filter
-     * @param status optional job status filter
-     * @param location optional location search
-     * @param keyword optional keyword for title or company name
-     * @param page zero-based page number
-     * @param size number of records per page
-     * @param sort field used to sort the results
-     * @param direction sort direction, either asc or desc
-     * @return a page of matching jobs and its pagination metadata
-     */
+   */
     public PageResponse<JobResponse> getJobs(
             JobType jobType,
             JobStatus status,
@@ -197,6 +192,18 @@ public class JobService {
     }
 
     /**
+     * Retrieves every job posted by the given employer, newest first
+     * (open and closed), for the employer's own dashboard.
+     */
+    public List<JobResponse> getMyJobs(String username) {
+        return jobRepository
+                .findByCreatedBy_UsernameOrderByCreatedAtDesc(username)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    /**
      * Retrieves a job by its ID.
      *
      * @param id ID of the requested job
@@ -255,6 +262,12 @@ public class JobService {
         job.setJobType(request.getJobType());
         job.setSalary(request.getSalary());
         job.setDeadline(request.getDeadline());
+
+        if (request.getVacancies() != null) {
+            int filled = job.getFilledVacancies() == null ? 0 : job.getFilledVacancies();
+            if (request.getVacancies() < filled) { throw new ConflictException( "Vacancies cannot be lower than the " + filled +" applicant(s) already accepted"
+            );}
+        job.setVacancies(request.getVacancies()); }
 
         Job savedJob = jobRepository.save(job);
 
@@ -357,7 +370,10 @@ public class JobService {
                 job.getStatus(),
                 job.getCreatedAt(),
                 job.getUpdatedAt(),
-                job.getCreatedBy().getUsername()
+                job.getCreatedBy().getUsername(),
+                job.getVacancies() == null ? 1 : job.getVacancies(),
+                job.getFilledVacancies() == null ? 0 : job.getFilledVacancies()
+
         );
     }
 }
