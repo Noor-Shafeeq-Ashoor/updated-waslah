@@ -2,7 +2,7 @@
 
 A secure Spring Boot REST API that connects people to **work opportunities** and **places to work**: users can browse and apply for jobs posted by verified employers, and book desks or rooms in partner cafés.
 
-> Built for **Project 2 — Build a Secure Spring Boot REST API** (Unit 2 Backend Application).
+> Developed incrementally through Unit 2 and Unit 3, with integrated booking, group study sessions, concurrency control, and asynchronous notifications.
 
 ---
 
@@ -64,6 +64,7 @@ A secure Spring Boot REST API that connects people to **work opportunities** and
 - Consistent JSON **error responses** via a global exception handler
 - **Swagger / OpenAPI** documentation with descriptions, examples and per-endpoint status codes
 - **Database seeding** of an **admin** (from environment variables), a demo café manager, two cafés and five study spaces on first start
+- **Group study sessions** with capacity enforcement, participant management, FIFO waitlists, and transaction-safe concurrent joins and leaves
 
 ---
 
@@ -88,6 +89,9 @@ A secure Spring Boot REST API that connects people to **work opportunities** and
 | JUnit 5 / Spring Boot Test | Unit tests |
 | Maven (wrapper included) | Build tool |
 | Git / GitHub | Version control |
+| PostgreSQL transaction-level advisory locks | Coordinate concurrent booking and session updates across application instances |
+| `ThreadPoolTaskExecutor` | Execute notification delivery asynchronously |
+| Java `ExecutorService`, `Callable`, `Future`, `CountDownLatch` | Run concurrent REST integration tests |
 
 ---
 
@@ -143,6 +147,18 @@ src/main/java/com/ga/waslah
 - **`ProfileImageStorageService`** — checks size, content type and file signature, stores the image under a random UUID name in `app.upload.profile-images-dir`, and saves only that name in the database.
 - **`DataLoader`** — seeds demo data on startup if it does not already exist.
 - **DTOs** — requests are validated with Bean Validation; most responses are DTOs and never include password hashes.
+
+### Study-session data model
+
+| Entity | Responsibility |
+|---|---|
+| `StudySession` | Group session linked one-to-one to a booking, with organizer, title, capacity and status |
+| `SessionParticipant` | Records users who hold a confirmed seat in a session |
+| `SessionWaitlist` | Records users waiting for a seat and their FIFO positions |
+
+**Relationship summary:** `Booking` (1) ↔ (0..1) `StudySession`; `User` (1) → (many) organized `StudySession` records; `StudySession` (1) → (many) `SessionParticipant` and `SessionWaitlist` entries; each participant or waitlist entry refers to a `User`.
+
+**Entity-count note:** The source snapshot contains these three clearly identifiable session-related entities. The assignment separately requires **five additional meaningful entities** compared with Project 2 and **ten total**. The five-new-entity requirement needs confirmation against the Project 2 baseline; this README does not claim it is met. Update the existing ERD to include the three new session relationships.
 
 ### Error response format
 
@@ -201,6 +217,51 @@ Status codes used: `200`, `201`, `204`, `400`, `401`, `403`, `404`, `409`, `429`
 | 18 | Important actions are written to the audit log with the acting user: bookings (create / cancel / confirm / reject), cafés (create / update / activate / deactivate), jobs (create / update / close), job applications (submit / accept / reject), café requests (submit / approve / reject), employer-request decisions and user deactivation | `AuditService` |
 | 19 | Profile pictures: JPG/PNG only, max 5 MB, content is checked, stored under a generated UUID name; a replaced picture is deleted from disk | `ProfileImageStorageService` |
 
+### Study-session business rules
+
+| # | Rule | Enforced in |
+|---|---|---|
+| 20 | Only the owner of a confirmed booking may create its study session; each booking may have at most one session. | `StudySessionService` |
+| 21 | Session capacity must be at least 2 and cannot exceed the booked study space capacity; the organizer occupies the first seat. | `StudySessionService` |
+| 22 | A user cannot join the same session or its waitlist more than once. | `StudySessionService` |
+| 23 | Confirmed participation in overlapping active sessions is rejected. | `StudySessionService` |
+| 24 | Available seats are allocated to eligible users; existing waitlisted users take priority over new joiners. | `StudySessionService` |
+| 25 | If no seat is available, a new eligible joiner enters the waitlist at the next position. | `StudySessionService` |
+| 26 | The organizer cannot leave using the participant-leave endpoint; leaving releases a seat and attempts FIFO promotion of eligible waiters. | `StudySessionService` |
+| 27 | Inactive sessions, unconfirmed bookings, and bookings that have already ended cannot accept new participants. | `StudySessionService` |
+| 28 | Cancelling a booking cancels its linked active session in the same transaction. | `BookingService` |
+| 29 | Mutating session participation and relevant booking operations acquire the shared PostgreSQL transaction-scoped advisory lock to serialize competing writes. | `ParticipationLockService`, `StudySessionService`, `BookingService` |
+
+### Group study sessions and FIFO waitlist
+
+Project 3 extends the original WASLAH booking platform rather than replacing it. A user with a **confirmed study-space booking** can organize a group **Study Session**. Other users can join up to the session's capacity, or enter a **first-in, first-out (FIFO) waitlist** when no seats are available. When a participant leaves, the service attempts to promote eligible waitlisted users. The organizer is automatically registered as a participant.
+
+The new workflow integrates with existing users, bookings, study spaces, Spring Security, PostgreSQL, and REST APIs.
+
+- The session organizer occupies a seat immediately and cannot leave through the ordinary participant-leave operation.
+- Session capacity cannot exceed the booked study space's capacity.
+- A user cannot join the same session twice or join its waitlist twice.
+- Confirmed participation in overlapping active study sessions is rejected.
+- When a session is full, users are placed on the waitlist with increasing positions.
+- When a participant leaves, the service considers waiting users by position and promotes eligible users into available seats. An ineligible waiter may retain their position while another eligible waiter is promoted; therefore the policy is **FIFO among eligible waiters**, not an unconditional promotion guarantee.
+- Booking cancellation also cancels the associated active study session in the same transaction.
+
+### Race conditions and database consistency
+
+**Shared resource:** the limited number of confirmed participant seats in a Study Session, together with its waitlist and booking/session status.
+
+**Race condition:** two users attempt to join the final available seat simultaneously. Without synchronization, both transactions could read the same available-seat count and each insert a participant, exceeding the configured capacity. Similarly, concurrent departures could attempt to promote the same waiting users twice, and cancellation could race with a join.
+
+**Required invariant:** confirmed participants must not exceed session capacity; one user must not receive duplicate participation; overlapping confirmed session participation is rejected; cancelled sessions must not accept new participants.
+
+`StudySessionService` uses Spring `@Transactional(isolation = READ_COMMITTED)` for its mutation operations. Before reading or modifying related session participation state, the service invokes `ParticipationLockService.lockStudySessionWrites()`, which acquires a **PostgreSQL transaction-scoped advisory lock** using `pg_advisory_xact_lock`. The booking workflow also uses the same lock for relevant writes, so join/leave/create and booking cancellation can be serialized consistently.
+
+The advisory lock is held until transaction completion and is automatically released at commit or rollback. This is a **database-level lock**, not a Java `ReentrantLock`, so it can coordinate concurrent requests even when the application runs in multiple processes connected to the same PostgreSQL database.
+
+**Why this approach?** It provides a simple correctness-first critical section across multiple tables and operations. The trade-off is **coarse-grained serialization**: even unrelated session writes contend for the same advisory lock. A future improvement is finer-grained locking, with a consistent global lock acquisition order and tests for deadlocks and throughput.
+
+The existing booking workflow also uses database transactions and pessimistic row locking for study-space booking conflicts. PostgreSQL is required for the advisory-lock behavior; H2-only tests do not demonstrate this specific guarantee.
+
 ### Booking status transitions
 
 | From | To | Who / what |
@@ -215,9 +276,7 @@ Status codes used: `200`, `201`, `204`, `400`, `401`, `403`, `404`, `409`, `429`
 
 ## User Stories
 
-User stories are documented in [`USER STORY.md`](./USER%20STORY.md).
-
-
+See [`USER STORY.md`](./USER%20STORY.md) for **35 integrated user stories**, covering the original platform and the group study-session, FIFO waitlist, and concurrency workflows. The new stories include acceptance criteria for last-seat allocation, concurrent departures, and booking cancellation.
 
 ---
 
@@ -470,6 +529,19 @@ Missing, invalid or expired tokens return `401`. A valid token without the requi
 | PUT | `/api/manager/bookings/{id}/confirm` | Confirm a pending booking | Café Manager (owner) |
 | PUT | `/api/manager/bookings/{id}/cancel` | Reject a pending booking | Café Manager (owner) |
 
+#### Group study sessions
+
+All routes use the existing JWT/Spring Security authentication and authorization mechanisms. Check Swagger UI for the current request schemas and response details.
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/study-sessions` | Create a session from an eligible confirmed booking |
+| `POST` | `/api/study-sessions/{id}/join` | Join a session or enter its FIFO waitlist |
+| `POST` | `/api/study-sessions/{id}/leave` | Leave a session and trigger waitlist promotion |
+| `PUT` | `/api/bookings/{id}/cancel` | Cancel a booking and its associated active study session |
+
+A successful join can return `JOINED` or `WAITLISTED`; conflicting business rules return an error (commonly HTTP `409`). A successful leave returns HTTP `204` in the tested workflow.
+
 **Pagination response** (cafés, study spaces, jobs, bookings, audit log):
 
 ```json
@@ -495,6 +567,10 @@ curl -N -H "Authorization: Bearer <JWT_TOKEN>" http://localhost:8080/api/notific
 ```
 
 Browsers' built-in `EventSource` cannot set headers; use `fetch` streaming or an EventSource polyfill. Swagger UI does not render live streams — use `curl` as above.
+
+### Asynchronous notification processing
+
+`AsyncConfig` enables asynchronous execution and defines the `notificationExecutor` (`ThreadPoolTaskExecutor`): **2 core threads**, **4 maximum threads**, **100 queued tasks**, and a `waslah-notification-` thread-name prefix. The existing notification workflow processes events asynchronously after transaction commit, reducing the work performed directly on the request thread. This is a meaningful application-level thread-pool use case, distinct from the test-only `ExecutorService` below.
 
 ### Example requests
 
@@ -678,6 +754,26 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 ---
 
 
+### Concurrent REST integration testing
+
+The `src/test/java/com/ga/waslah/` directory includes integration tests using Java `HttpClient`, `ExecutorService`, `Callable`, `Future`, and `CountDownLatch`. The latch coordinates approximately simultaneous REST requests against a **running application with PostgreSQL**. Tests are opt-in via `WASLAH_CONCURRENCY_TEST=true` and use environment-configured fixture IDs and JWTs.
+
+| Test | Scenario | Observed outcome |
+|---|---|---|
+| `StudySessionConcurrentJoinIT` | Two users compete for the last seat | One `JOINED`, one `WAITLISTED`; test passed |
+| `StudySessionOverlappingJoinIT` | Same user attempts two overlapping sessions | One join succeeded; the other returned HTTP `409`; test passed |
+| `StudySessionConcurrentLeaveIT` | Two participants leave simultaneously | Both returned HTTP `204`; test passed; database state was checked separately |
+| `BookingCancellationConcurrencyIT` | Cancellation and join submitted concurrently | Cancellation succeeded; join returned HTTP `409` because user was already joined; test passed its original assertions, **but did not conclusively test the intended cancellation-versus-fresh-join race** |
+
+**Testing limitations:** These tests operate on mutable database fixtures and should not be rerun with consumed IDs. A new confirmed booking, OPEN session and previously unjoined user are needed to complete the cancellation-vs-join race verification. Additional repeat-run stress tests and throughput measurements remain future work.
+
+### Running concurrency tests locally
+
+1. Run the Spring Boot API with the `dev` profile against a **disposable PostgreSQL database**.
+2. Prepare dedicated demo users and fresh confirmed booking/session fixtures. The optional concurrency fixture loader is enabled only when `WASLAH_SEED_CONCURRENCY_TESTS=true`; disable it again after initial seeding to avoid duplicate or conflicting data.
+3. Configure the test run in IntelliJ with `WASLAH_CONCURRENCY_TEST=true`, `WASLAH_BASE_URL=http://localhost:8080`, the scenario-specific booking/session IDs, and JWTs in the environment. Never commit JWTs, database passwords or personal credentials.
+4. Run the selected integration test, inspect both HTTP responses, and verify the resulting database state in PostgreSQL.
+
 ## Major Challenges
 
 **Preventing double-booking.** A slot must be refused if it overlaps *any* active booking, not just one with the identical start time. This is solved with an overlap query — an existing booking conflicts when `existing.start < requested.end` **and** `existing.end > requested.start` — checked against `PENDING` and `CONFIRMED` bookings. Cancelled bookings no longer match, so cancelling releases the slot automatically. Because "check, then insert" is not safe when two requests arrive together, the booking runs in one transaction that first locks the study-space row (`SELECT … FOR UPDATE`), so concurrent requests for the same space are processed one after the other.
@@ -691,6 +787,13 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 **Consistent errors from every layer.** Errors raised inside Spring Security (missing token, forbidden) happen before a request reaches a controller, so `GlobalExceptionHandler` cannot catch them. A custom authentication entry point and access-denied handler return the same JSON structure so clients see one error format everywhere.
 
 ---
+
+### Concurrency challenges and lessons learned
+
+- **Correct lock scope:** The participant count, waitlist, and linked booking/session status must be coordinated as one transactional workflow, not protected by unrelated in-memory locks.
+- **Correct HTTP methods:** The actual leave endpoint is `POST /api/study-sessions/{id}/leave`, and booking cancellation is `PUT /api/bookings/{id}/cancel`. Earlier test attempts using different methods returned errors until aligned with the controllers.
+- **Reliable race tests:** Concurrent requests alone do not prove the desired race condition; fixtures must be fresh, and assertions must distinguish an expected concurrency rejection from unrelated validation failures.
+- **Correctness versus throughput:** A global transaction-level advisory lock simplifies reasoning but may become a bottleneck under heavy load.
 
 ## Future Improvements
 - Add a **frontend** and an admin dashboard
@@ -706,4 +809,10 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 | jjwt (JSON Web Token for Java) | https://github.com/jwtk/jjwt | Generating and validating JWTs |
 | springdoc-openapi | https://springdoc.org/ | Swagger UI / OpenAPI generation |
 | PostgreSQL Documentation | https://www.postgresql.org/docs/ | Database setup and SQL |
-| Project Lombok | https://projectlombok.org/ | Reducing boilerplate in entities and services | | |
+| Project Lombok | https://projectlombok.org/ | Reducing boilerplate in entities and services |
+| Java Concurrency Tutorial | https://docs.oracle.com/javase/tutorial/essential/concurrency/ | Threads, synchronization, concurrency concepts |
+| Java ExecutorService API | https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ExecutorService.html | Concurrent test execution |
+| Spring Transaction Management | https://docs.spring.io/spring-framework/reference/data-access/transaction.html | Transaction boundaries and isolation |
+| PostgreSQL Advisory Locks | https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS | Transaction-scoped concurrency coordination |
+| Spring Task Execution | https://docs.spring.io/spring-framework/reference/integration/scheduling.html | Asynchronous notification thread pool |
+
