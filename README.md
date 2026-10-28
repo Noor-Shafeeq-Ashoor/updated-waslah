@@ -142,6 +142,9 @@ src/main/java/com/ga/waslah
 - **`RateLimitingInterceptor`** — per-IP, per-endpoint request limiter (see [Business Rules](#business-rules)).
 - **`GlobalExceptionHandler`** — maps exceptions to the standard error body and hides internal details (no stack traces).
 - **`NotificationService` + `BookingEventListener`** — keep one SSE connection per subscribed client and push events to the right user once a booking transaction has committed.
+- **`SessionActivityService`** — the one place where a study-session change is written to `session_events` and announced. It runs inside the caller's transaction (and lock), so the history entry commits or rolls back with the change, and the notification event is published only after commit.
+- **`SessionActivityListener`** — receives that event after commit and, with `CompletableFuture`, saves the notification and pushes it over SSE as two independent tasks on `notificationExecutor` (a failure in one does not stop the other, and neither can slow or fail the original request).
+- **`StoredNotificationService`** — stores notifications and serves `GET /api/notifications`.
 - **`AuditService`** — writes who did what to which record into the `audit_logs` table (admins read it through `GET /api/admin/audit-logs`).
 - **`PagingUtil` / `Specs`** — validate page, size, sort field and direction (whitelisted per endpoint) and build optional filters, so list endpoints filter and paginate in the database.
 - **`ProfileImageStorageService`** — checks size, content type and file signature, stores the image under a random UUID name in `app.upload.profile-images-dir`, and saves only that name in the database.
@@ -155,10 +158,12 @@ src/main/java/com/ga/waslah
 | `StudySession` | Group session linked one-to-one to a booking, with organizer, title, capacity and status |
 | `SessionParticipant` | Records users who hold a confirmed seat in a session |
 | `SessionWaitlist` | Records users waiting for a seat and their FIFO positions |
+| `SessionEvent` | History of everything that happened to a session (created, joined, waitlisted, promoted, left, cancelled, completed). Written in the same transaction and under the same lock as the change, so its order shows how concurrent requests were serialized |
+| `Notification` | Stored copy of a notification, so users who were offline during a real-time event can read it later (`GET /api/notifications`) |
 
 **Relationship summary:** `Booking` (1) ↔ (0..1) `StudySession`; `User` (1) → (many) organized `StudySession` records; `StudySession` (1) → (many) `SessionParticipant` and `SessionWaitlist` entries; each participant or waitlist entry refers to a `User`.
 
-**Entity-count note:** The source snapshot contains these three clearly identifiable session-related entities. The assignment separately requires **five additional meaningful entities** compared with Project 2 and **ten total**. The five-new-entity requirement needs confirmation against the Project 2 baseline; this README does not claim it is met. Update the existing ERD to include the three new session relationships.
+**Entity count:** the Project 2 ERD documented 12 tables. Project 3 adds five entities (`StudySession`, `SessionParticipant`, `SessionWaitlist`, `SessionEvent`, `Notification`), giving 17 in total. All five support the new group-session workflow; none was added only to raise the count. The ERD above includes them.
 
 ### Error response format
 
@@ -231,6 +236,10 @@ Status codes used: `200`, `201`, `204`, `400`, `401`, `403`, `404`, `409`, `429`
 | 27 | Inactive sessions, unconfirmed bookings, and bookings that have already ended cannot accept new participants. | `StudySessionService` |
 | 28 | Cancelling a booking cancels its linked active session in the same transaction. | `BookingService` |
 | 29 | Mutating session participation and relevant booking operations acquire the shared PostgreSQL transaction-scoped advisory lock to serialize competing writes. | `ParticipationLockService`, `StudySessionService`, `BookingService` |
+| 30 | A waitlisted user can leave the waiting list (`POST /api/study-sessions/{id}/leave`); positions of the others are unchanged. | `StudySessionService` |
+| 31 | A cafe manager can reject a `PENDING` booking or cancel a `CONFIRMED` one; cancelling also cancels the linked session and clears its waitlist. Uses the same locks as the owner's cancellation. | `BookingService` |
+| 32 | A booking whose end time has passed cannot be confirmed; `PENDING` bookings whose time passed are cancelled automatically by the scheduler. | `BookingService`, `BookingCompletionScheduler` |
+| 33 | Session capacity is at least 2 (the organizer plus at least one more seat) and at most the study space capacity. | `CreateStudySessionRequest`, `StudySessionService` |
 
 ### Group study sessions and FIFO waitlist
 
@@ -268,21 +277,58 @@ The existing booking workflow also uses database transactions and pessimistic ro
 |---|---|---|
 | — | `PENDING` | User creates a booking |
 | `PENDING` | `CONFIRMED` | Café manager confirms (own café only) |
-| `PENDING` / `CONFIRMED` | `CANCELLED` | User cancels their own booking, or the café manager rejects a `PENDING` one |
+| `PENDING` / `CONFIRMED` | `CANCELLED` | User cancels their own booking, or the café manager rejects a `PENDING` one or cancels a `CONFIRMED` one (which also cancels its study session) |
+| `PENDING` | `CANCELLED` | Scheduled job (runs every minute) once the end time has passed without an answer |
 | `CONFIRMED` | `COMPLETED` | Scheduled job (runs every minute) once the end time has passed |
 | `COMPLETED` / `CANCELLED` | — | Final states; `PENDING`/`CONFIRMED` bookings block the time slot, `CANCELLED` does not |
 
 ---
 
+## Project 3 Changes
+
+**New functionality.** Group study sessions with a FIFO waitlist (see above), plus in this iteration: leaving the waitlist, café-manager cancellation of confirmed bookings, automatic expiry of unanswered `PENDING` bookings, session history, stored notifications and real-time session events.
+
+**New models.** `StudySession`, `SessionParticipant`, `SessionWaitlist`, `SessionEvent`, `Notification` (5 new, 17 total; see the ERD).
+
+**Concurrency-sensitive workflow.** Joining, leaving and promoting in a study session, and cancelling or confirming the booking behind it.
+
+**Race condition addressed.** Two users joining the last seat, two departures promoting the same waiter, the same user joining two overlapping sessions, and a booking being cancelled while someone joins its session (details in [Race conditions and database consistency](#race-conditions-and-database-consistency)). A further race closed in this iteration: the café manager's confirm/reject used to run without any lock and could overwrite a concurrent cancellation; it now goes through `BookingService`, which takes the same advisory lock and booking row lock as every other writer.
+
+**Concurrency technique.** One PostgreSQL transaction-scoped advisory lock for all session and booking-status writes, pessimistic row locks (`SELECT … FOR UPDATE`) on the booking and study space, and unique constraints as the last line of defence.
+
+**Database consistency.** All changes of one request (participant, waitlist entry, session status, booking status, history row) commit or roll back together. Notifications are published only after commit.
+
+**Asynchronous processing.** `SessionActivityListener` uses `CompletableFuture` on the `notificationExecutor` pool: persisting and pushing run as independent tasks; failures are logged and isolated. The scheduler also runs in the background.
+
+**Why a lock and not only optimistic locking?** A join reads several rows (seat count, waitlist, overlapping sessions) and writes several others, so a version column on one row would not detect the conflict. The lock makes the whole read-decide-write sequence a critical section. The cost is serialization of unrelated sessions (a documented trade-off).
+
+### Updated API (Project 3 iteration)
+
+| Method | Endpoint | Change |
+|---|---|---|
+| GET | `/api/notifications` | New: my stored notifications (`unreadOnly`, `page`, `size`) |
+| GET | `/api/notifications/unread-count` | New: `{"unread": n}` |
+| GET | `/api/study-sessions/{id}/events` | New: session history (`403` unless involved in the session) |
+| PUT | `/api/notifications/{id}/read` | New: mark one of my notifications as read |
+| POST | `/api/study-sessions/{id}/leave` | Changed: also lets a waitlisted user leave the waiting list |
+| PUT | `/api/manager/bookings/{id}/cancel` | Changed: also cancels a `CONFIRMED` booking (and its session); `409` for bookings that cannot be cancelled |
+| PUT | `/api/manager/bookings/{id}/confirm` | Changed: `409` (not `403`) for a non-pending or already ended booking |
+| PUT | `/api/bookings/{id}/confirm` | Deprecated duplicate of the manager endpoint; same implementation |
+| POST | `/auth/login` | Changed: unknown username now returns `401` like a wrong password; response also contains `role`; token carries a `role` claim |
+| POST | `/auth/forgot-password` | Changed: always answers `200`, whether or not the address is registered |
+| POST | `/api/study-sessions` | Changed: `capacity` must be at least 2 (validation error `400` otherwise) |
+
+---
+
 ## User Stories
 
-See [`USER STORY.md`](./USER%20STORY.md) for **35 integrated user stories**, covering the original platform and the group study-session, FIFO waitlist, and concurrency workflows. The new stories include acceptance criteria for last-seat allocation, concurrent departures, and booking cancellation.
+See [`USER STORY.md`](./USER%20STORY.md) for **43 integrated user stories**, covering the original platform and the group study-session, FIFO waitlist, and concurrency workflows. The new stories include acceptance criteria for last-seat allocation, concurrent departures, and booking cancellation.
 
 ---
 
 ## ERD
 
-Entity Relationship Diagram (written from the JPA entities; 12 tables — `AUDIT_LOGS` is standalone because it stores the actor's username, not a foreign key):
+Entity Relationship Diagram (written from the JPA entities; 17 tables — `AUDIT_LOGS` is standalone because it stores the actor's username, not a foreign key):
 
 ```mermaid
 erDiagram
@@ -298,6 +344,15 @@ erDiagram
     CAFES ||--o{ STUDY_SPACES : "contains"
     STUDY_SPACES ||--o{ BOOKINGS : "is booked in"
     JOBS ||--o{ JOB_APPLICATIONS : "receives"
+    BOOKINGS ||--o| STUDY_SESSIONS : "hosts"
+    USERS ||--o{ STUDY_SESSIONS : "organizes"
+    STUDY_SESSIONS ||--o{ SESSION_PARTICIPANTS : "has seats"
+    STUDY_SESSIONS ||--o{ SESSION_WAITLIST : "has queue"
+    STUDY_SESSIONS ||--o{ SESSION_EVENTS : "history"
+    USERS ||--o{ SESSION_PARTICIPANTS : "holds"
+    USERS ||--o{ SESSION_WAITLIST : "waits in"
+    USERS ||--o{ SESSION_EVENTS : "is subject of"
+    USERS ||--o{ NOTIFICATIONS : "receives"
 
     USERS {
         bigint id PK
@@ -419,6 +474,48 @@ erDiagram
         bigint target_id
         timestamp timestamp
     }
+    STUDY_SESSIONS {
+        bigint id PK
+        varchar title
+        varchar description "max 1000"
+        int capacity "2..space capacity"
+        varchar status "OPEN|FULL|CANCELLED|COMPLETED"
+        bigint booking_id FK "unique"
+        bigint organizer_id FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    SESSION_PARTICIPANTS {
+        bigint id PK
+        bigint session_id FK "unique with user_id"
+        bigint user_id FK
+        timestamp joined_at
+    }
+    SESSION_WAITLIST {
+        bigint id PK
+        bigint session_id FK "unique with user_id and with position"
+        bigint user_id FK
+        int position "FIFO order"
+        timestamp joined_at
+    }
+    SESSION_EVENTS {
+        bigint id PK
+        bigint session_id FK
+        bigint user_id FK "nullable (system events)"
+        varchar event_type "CREATED|JOINED|WAITLISTED|PROMOTED|LEFT|LEFT_WAITLIST|CANCELLED|COMPLETED"
+        varchar details
+        timestamp occurred_at
+    }
+    NOTIFICATIONS {
+        bigint id PK
+        bigint recipient_id FK
+        varchar type "e.g. SESSION_PROMOTED"
+        varchar message
+        varchar reference_type
+        bigint reference_id
+        boolean read_flag
+        timestamp created_at
+    }
 ```
 
 
@@ -471,6 +568,9 @@ Missing, invalid or expired tokens return `401`. A valid token without the requi
 | DELETE | `/api/admin/users/{id}` | Deactivate a user (same action, admin route) | Admin |
 | GET | `/api/admin/audit-logs?page=&size=&sort=` | Paginated audit trail | Admin |
 | GET | `/api/notifications/stream` | Open an SSE stream of real-time notifications | Private |
+| GET | `/api/notifications` | List my stored notifications (paginated, `unreadOnly`) | Private |
+| GET | `/api/notifications/unread-count` | Count my unread notifications | Private |
+| PUT | `/api/notifications/{id}/read` | Mark one of my notifications as read | Private |
 
 #### Profile
 
@@ -527,7 +627,7 @@ Missing, invalid or expired tokens return `401`. A valid token without the requi
 | PUT | `/api/bookings/{id}/cancel` | Cancel own booking | Private (owner) |
 | GET | `/api/manager/bookings` | List bookings for own cafés | Café Manager |
 | PUT | `/api/manager/bookings/{id}/confirm` | Confirm a pending booking | Café Manager (owner) |
-| PUT | `/api/manager/bookings/{id}/cancel` | Reject a pending booking | Café Manager (owner) |
+| PUT | `/api/manager/bookings/{id}/cancel` | Reject a pending booking or cancel a confirmed one (also cancels its session) | Café Manager (owner) |
 
 #### Group study sessions
 
@@ -537,7 +637,8 @@ All routes use the existing JWT/Spring Security authentication and authorization
 |---|---|---|
 | `POST` | `/api/study-sessions` | Create a session from an eligible confirmed booking |
 | `POST` | `/api/study-sessions/{id}/join` | Join a session or enter its FIFO waitlist |
-| `POST` | `/api/study-sessions/{id}/leave` | Leave a session and trigger waitlist promotion |
+| `POST` | `/api/study-sessions/{id}/leave` | Leave a session (triggers waitlist promotion) or leave the waiting list |
+| `GET` | `/api/study-sessions/{id}/events` | History of a session, oldest first (organizer, participants, waitlisted users, admins) |
 | `PUT` | `/api/bookings/{id}/cancel` | Cancel a booking and its associated active study session |
 
 A successful join can return `JOINED` or `WAITLISTED`; conflicting business rules return an error (commonly HTTP `409`). A successful leave returns HTTP `204` in the tested workflow.
@@ -561,6 +662,14 @@ Open `GET /api/notifications/stream` with the JWT in the `Authorization` header.
 | `BOOKING_CONFIRMED` | the booker | the café manager confirmed the booking |
 | `BOOKING_REJECTED` | the booker | the café manager rejected the booking |
 | `BOOKING_CANCELLED` | the booker | the booker cancelled the booking |
+| `SESSION_JOINED` | the session organizer | someone took a seat |
+| `SESSION_WAITLISTED` | the user | the session was full; the user got a waitlist position |
+| `SESSION_PROMOTED` | the user | a seat opened and the user was promoted from the waitlist |
+| `SESSION_LEFT` | the session organizer | a participant left |
+| `SESSION_LEFT_WAITLIST` | the user | the user left the waiting list |
+| `SESSION_CANCELLED` | every participant and waitlisted user (except whoever cancelled) | the booking behind the session was cancelled or rejected |
+
+The `SESSION_*` events are also stored and can be read later through `GET /api/notifications`. They are sent only after the database transaction commits.
 
 ```bash
 curl -N -H "Authorization: Bearer <JWT_TOKEN>" http://localhost:8080/api/notifications/stream
@@ -571,6 +680,8 @@ Browsers' built-in `EventSource` cannot set headers; use `fetch` streaming or an
 ### Asynchronous notification processing
 
 `AsyncConfig` enables asynchronous execution and defines the `notificationExecutor` (`ThreadPoolTaskExecutor`): **2 core threads**, **4 maximum threads**, **100 queued tasks**, and a `waslah-notification-` thread-name prefix. The existing notification workflow processes events asynchronously after transaction commit, reducing the work performed directly on the request thread. This is a meaningful application-level thread-pool use case, distinct from the test-only `ExecutorService` below.
+
+Study-session notifications (`SessionActivityListener`) use `CompletableFuture.runAsync(..., notificationExecutor)` twice, once to store the notification and once to push it over SSE, joined with `CompletableFuture.allOf`. Each branch has its own `exceptionally` handler, so a database failure does not prevent the live push and vice versa. The tasks never block waiting for each other, so the small pool cannot deadlock. If the pool queue is full, the rejection is logged and the already-committed change is unaffected.
 
 ### Example requests
 
@@ -744,8 +855,13 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 |---|---|---|
 | Rate limiting (limits per endpoint, unrelated paths unaffected) | `RateLimitingInterceptorTest` | 6 |
 | Email verification (valid and expired token) | `EmailVerificationServiceTest` | 2 |
-| Booking workflow: create, overlap, invalid time, unavailable space, cancel rules, ownership | `BookingServiceTest` | 9 |
-| Café-manager confirm / reject, ownership, audit and notification | `CafeManagerBookingServiceTest` | 4 |
+| Booking workflow: create, overlap, invalid time, unavailable space, cancel rules, ownership, lock order, session cancellation, manager reject/cancel/confirm | `BookingServiceTest` | 18 |
+| Café-manager notification after a delegated confirm / reject | `CafeManagerBookingServiceTest` | 4 |
+| Study sessions: join, waitlist, leave waitlist, promotion, skipped waiter, organizer rule, lock order | `StudySessionServiceTest` | 9 |
+| `CompletableFuture` notification fan-out and failure isolation | `SessionActivityListenerTest` | 4 |
+| Thread-safety of the shared SSE registry under 1,000 concurrent calls | `NotificationServiceConcurrencyTest` | 1 |
+| Race condition without control vs. with a lock and with compare-and-set | `SeatAllocationRaceDemoTest` | 3 |
+| JWT carries the role claim | `JwtServiceTest` | 2 |
 | Job rules: employers only, owner-only close, audit entry | `JobServiceTest` | 3 |
 | Password reset: token validation (valid / expired / used) and reset | `PasswordResetServiceTest` | 4 |
 | User details / role authority | `MyUserDetailsTest` | 1 |
@@ -753,6 +869,10 @@ The `test` profile uses an in-memory H2 database, so no PostgreSQL is needed for
 
 ---
 
+
+### Concurrency demonstration without a database
+
+`SeatAllocationRaceDemoTest` models the "last seat" check-then-act in plain Java. The first test forces the two threads to pass the check before either updates (with a `CyclicBarrier`) and asserts the bad result: two users both told they got a seat for a capacity of one. The other two tests run 50 simultaneous requests for 5 seats through a `ReentrantLock` and through an atomic `compareAndSet` loop and assert that exactly 5 succeed. `NotificationServiceConcurrencyTest` hammers the shared SSE registry from 16 threads and checks that no subscription is lost. These run with `./mvnw test`; the database-level guarantee itself is shown by the `*IT` tests below.
 
 ### Concurrent REST integration testing
 
@@ -793,10 +913,15 @@ The `src/test/java/com/ga/waslah/` directory includes integration tests using Ja
 - **Correct lock scope:** The participant count, waitlist, and linked booking/session status must be coordinated as one transactional workflow, not protected by unrelated in-memory locks.
 - **Correct HTTP methods:** The actual leave endpoint is `POST /api/study-sessions/{id}/leave`, and booking cancellation is `PUT /api/bookings/{id}/cancel`. Earlier test attempts using different methods returned errors until aligned with the controllers.
 - **Reliable race tests:** Concurrent requests alone do not prove the desired race condition; fixtures must be fresh, and assertions must distinguish an expected concurrency rejection from unrelated validation failures.
+- **Two code paths, one rule:** the café manager's confirm/reject originally bypassed the lock that every other booking-status writer used, so a manager action could overwrite a concurrent cancellation. The fix was not a second lock but removing the duplicate logic: the manager service now delegates to `BookingService`.
+- **Not blocking on the notification pool:** the first idea was to wait for the stored-notification task and the push task on the same small pool; that can deadlock when the pool is full. The tasks are independent and nothing waits on them inside the pool.
 - **Correctness versus throughput:** A global transaction-level advisory lock simplifies reasoning but may become a bottleneck under heavy load.
 
 ## Future Improvements
-- Add a **frontend** and an admin dashboard
+- Extend the existing React frontend (`frontend/`) with session, waitlist and notification screens, and add an admin dashboard
+- Run the concurrency integration tests automatically (Testcontainers PostgreSQL + Failsafe) instead of against a hand-started server
+- Use finer-grained locks (per session / per study space) with a fixed acquisition order
+- Resend-verification endpoint; JWT revocation after password change; rate limiting behind a proxy (`X-Forwarded-For`)
 
 ---
 
@@ -815,4 +940,6 @@ The `src/test/java/com/ga/waslah/` directory includes integration tests using Ja
 | Spring Transaction Management | https://docs.spring.io/spring-framework/reference/data-access/transaction.html | Transaction boundaries and isolation |
 | PostgreSQL Advisory Locks | https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS | Transaction-scoped concurrency coordination |
 | Spring Task Execution | https://docs.spring.io/spring-framework/reference/integration/scheduling.html | Asynchronous notification thread pool |
+| Java CompletableFuture API | https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/CompletableFuture.html | Chaining and failure handling for notification delivery |
+| Spring transaction-bound events | https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html | `@TransactionalEventListener(AFTER_COMMIT)` for notifications |
 
