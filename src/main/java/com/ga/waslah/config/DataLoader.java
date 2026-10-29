@@ -1,6 +1,11 @@
-
 package com.ga.waslah.config;
 
+import com.ga.waslah.model.Booking;
+import com.ga.waslah.model.BookingStatus;
+import com.ga.waslah.model.StudySession;
+import com.ga.waslah.model.StudySessionStatus;
+import com.ga.waslah.model.SessionParticipant;
+import com.ga.waslah.model.SessionWaitlist;
 import com.ga.waslah.model.ApplicationStatus;
 import com.ga.waslah.model.Cafe;
 import com.ga.waslah.model.Job;
@@ -13,6 +18,10 @@ import com.ga.waslah.model.User;
 import com.ga.waslah.model.UserProfile;
 import com.ga.waslah.model.UserStatus;
 
+import com.ga.waslah.repository.BookingRepository;
+import com.ga.waslah.repository.StudySessionRepository;
+import com.ga.waslah.repository.SessionParticipantRepository;
+import com.ga.waslah.repository.SessionWaitlistRepository;
 import com.ga.waslah.repository.CafeRepository;
 import com.ga.waslah.repository.JobApplicationRepository;
 import com.ga.waslah.repository.JobRepository;
@@ -26,8 +35,11 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -40,7 +52,7 @@ import java.util.List;
  * preventing duplicate seed data when the application restarts.</p>
  *
  * <p>This component runs only when the Spring profile is "dev".
- * Bookings and study sessions are not seeded.</p>
+ * Future-dated demo bookings and study sessions are also seeded.</p>
  *
  * <p>Demo passwords must be configured for local development only.
  * Never use development credentials in production.</p>
@@ -54,6 +66,11 @@ public class DataLoader implements CommandLineRunner {
     // Repositories
     // =========================================================
 
+    private final BookingRepository bookingRepository;
+    private final StudySessionRepository studySessionRepository;
+    private final SessionParticipantRepository sessionParticipantRepository;
+    private final SessionWaitlistRepository sessionWaitlistRepository;
+    private final TransactionTemplate transactionTemplate;
     private final UserRepository userRepository;
     private final CafeRepository cafeRepository;
     private final StudySpaceRepository studySpaceRepository;
@@ -76,6 +93,11 @@ public class DataLoader implements CommandLineRunner {
      * Constructor injection for repositories and configuration.
      */
     public DataLoader(
+            BookingRepository bookingRepository,
+            StudySessionRepository studySessionRepository,
+            SessionParticipantRepository sessionParticipantRepository,
+            SessionWaitlistRepository sessionWaitlistRepository,
+            TransactionTemplate transactionTemplate,
             UserRepository userRepository,
             CafeRepository cafeRepository,
             StudySpaceRepository studySpaceRepository,
@@ -88,6 +110,11 @@ public class DataLoader implements CommandLineRunner {
             @Value("${app.seed.demo-user-password:}") String demoUserPassword,
             @Value("${app.seed.cafe-manager-password:}") String cafeManagerPassword
     ) {
+        this.bookingRepository = bookingRepository;
+        this.studySessionRepository = studySessionRepository;
+        this.sessionParticipantRepository = sessionParticipantRepository;
+        this.sessionWaitlistRepository = sessionWaitlistRepository;
+        this.transactionTemplate = transactionTemplate;
         this.userRepository = userRepository;
         this.cafeRepository = cafeRepository;
         this.studySpaceRepository = studySpaceRepository;
@@ -236,6 +263,10 @@ public class DataLoader implements CommandLineRunner {
         // 6. Seed employer, jobs, and pending applications.
         // This runs independently of café seed success.
         seedJobs();
+
+        // Seed deterministic demo scenarios for the Project 3 presentation.
+        // Each scenario is created atomically and skipped on subsequent restarts.
+        transactionTemplate.executeWithoutResult(status -> seedDemoSessions());
 
         log.info("WASLAH seed-data initialization completed.");
     }
@@ -720,4 +751,167 @@ public class DataLoader implements CommandLineRunner {
                 job.getTitle()
         );
     }
+    // =========================================================
+    // Project 3: Bookings, sessions, participants and waitlist
+    // =========================================================
+
+    /**
+     * Creates six distinct, future-dated Project 3 demonstration scenarios.
+     * Each scenario uses its own time slot and is safe to skip on restart.
+     */
+    private void seedDemoSessions() {
+        User organizer1 = userRepository.findByUsername("organizer1").orElse(null);
+        User organizer2 = userRepository.findByUsername("organizer2").orElse(null);
+        User student1 = userRepository.findByUsername("student1").orElse(null);
+        User student2 = userRepository.findByUsername("student2").orElse(null);
+        User student3 = userRepository.findByUsername("student3").orElse(null);
+        User student4 = userRepository.findByUsername("student4").orElse(null);
+        if (organizer1 == null || organizer2 == null || student1 == null || student2 == null
+                || student3 == null || student4 == null) {
+            log.warn("Six-session demo skipped: demo users are missing. Check demo password configuration.");
+            return;
+        }
+
+        StudySpace group = findDemoSpace("Bahrain Study Cafe", "Group Room");
+        StudySpace meeting = findDemoSpace("WASLAH Workspace Cafe", "Meeting Room");
+        if (group == null || meeting == null) {
+            log.warn("Six-session demo skipped: Group Room or Meeting Room is missing.");
+            return;
+        }
+
+        LocalDate day = LocalDate.now().plusDays(7);
+
+        // 1. FULL + FIFO waitlist: leaving should promote the first waiting user.
+        seedDemoScenario(organizer1, group, "Demo 1 - Full with Waitlist",
+                "Two seats filled; student2 and student3 are waiting in FIFO order.",
+                2, day.atTime(9, 0), List.of(student1), List.of(student2, student3));
+
+        // 2. LAST SEAT: send simultaneous join requests from student1 and student2.
+        seedDemoScenario(organizer2, meeting, "Demo 2 - Last Seat Race",
+                "Two of three seats filled; two concurrent join attempts compete for the last seat.",
+                3, day.atTime(12, 0), List.of(student3), List.of());
+
+        // 3. EMPTY EXCEPT ORGANIZER: normal sequential joining demonstration.
+        seedDemoScenario(organizer1, group, "Demo 3 - Open Session",
+                "Only the organizer is registered; three more users may join.",
+                4, day.plusDays(1).atTime(9, 0), List.of(), List.of());
+
+        // 4. NEAR FULL: joining the final seat should change OPEN to FULL.
+        seedDemoScenario(organizer2, meeting, "Demo 4 - Becomes Full",
+                "Three of four seats are taken; joining the last seat changes status to FULL.",
+                4, day.plusDays(1).atTime(12, 0), List.of(student1, student2), List.of());
+
+        // 5. FULL, NO WAITLIST: leaving should free a seat and reopen the session.
+        seedDemoScenario(organizer1, group, "Demo 5 - Leave Frees Seat",
+                "A full three-seat session with no waitlist; a participant leaving reopens it.",
+                3, day.plusDays(2).atTime(9, 0), List.of(student3, student4), List.of());
+
+        // 6. ACTIVE WITH MEMBERS: cancelling the linked booking should cancel the session.
+        seedDemoScenario(organizer2, meeting, "Demo 6 - Booking Cancellation",
+                "Cancel the confirmed booking and verify linked session cancellation.",
+                5, day.plusDays(2).atTime(12, 0), List.of(student1, student4), List.of());
+    }
+
+    /** Finds a seeded study space without relying on hardcoded database IDs. */
+    private StudySpace findDemoSpace(String cafeName, String spaceName) {
+        return studySpaceRepository.findAll().stream()
+                .filter(space -> space.getCafe() != null
+                        && cafeName.equalsIgnoreCase(space.getCafe().getName())
+                        && spaceName.equalsIgnoreCase(space.getName()))
+                .findFirst().orElse(null);
+    }
+
+    /**
+     * Seeds a confirmed booking, a linked session, participants and FIFO waitlist.
+     * Checks for existing future scenarios and overlapping bookings first.
+     * Runs inside the transaction started by run() via TransactionTemplate.
+     */
+    private void seedDemoScenario(User organizer, StudySpace space, String title,
+                                  String description, int capacity,
+                                  LocalDateTime start, List<User> extraParticipants,
+                                  List<User> waitingUsers) {
+        if (space.getCapacity() < capacity) {
+            log.warn("Demo session '{}' skipped: room capacity is too small.", title);
+            return;
+        }
+        if (1 + extraParticipants.size() > capacity) {
+            log.warn("Demo session '{}' skipped: participant count exceeds capacity.", title);
+            return;
+        }
+
+        // Preserve an existing future session with this title, regardless of its status.
+        boolean alreadySeeded = bookingRepository.findByUser_Username(organizer.getUsername())
+                .stream()
+                .filter(b -> b.getStudySpace().getId().equals(space.getId()))
+                .filter(b -> b.getEndTime().isAfter(LocalDateTime.now()))
+                .map(b -> studySessionRepository.findByBooking_Id(b.getId()).orElse(null))
+                .anyMatch(session -> session != null && title.equals(session.getTitle()));
+        if (alreadySeeded) {
+            log.info("Demo session '{}' already exists; skipping.", title);
+            return;
+        }
+
+        LocalDateTime end = start.plusHours(2);
+        boolean occupied = bookingRepository
+                .existsByStudySpaceAndStatusInAndStartTimeLessThanAndEndTimeGreaterThan(
+                        space, List.of(BookingStatus.PENDING, BookingStatus.CONFIRMED), end, start);
+        if (occupied) {
+            log.warn("Demo session '{}' skipped: room is already booked at {}.", title, start);
+            return;
+        }
+
+        Booking booking = new Booking();
+        booking.setUser(organizer);
+        booking.setStudySpace(space);
+        booking.setStartTime(start);
+        booking.setEndTime(end);
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking = bookingRepository.save(booking);
+
+        StudySession session = new StudySession();
+        session.setBooking(booking);
+        session.setOrganizer(organizer);
+        session.setTitle(title);
+        session.setDescription(description);
+        session.setCapacity(capacity);
+        session.setStatus(StudySessionStatus.OPEN);
+        session = studySessionRepository.save(session);
+
+        seedParticipant(session, organizer);
+        for (User participant : extraParticipants) {
+            seedParticipant(session, participant);
+        }
+        if (sessionParticipantRepository.countBySession_Id(session.getId()) >= capacity) {
+            session.setStatus(StudySessionStatus.FULL);
+            studySessionRepository.save(session);
+        }
+
+        // Position is unique per session; preserve insertion order for FIFO promotion.
+        int position = 1;
+        for (User waiting : waitingUsers) {
+            if (!sessionWaitlistRepository.existsBySession_IdAndUser_Id(session.getId(), waiting.getId())) {
+                SessionWaitlist entry = new SessionWaitlist();
+                entry.setSession(session);
+                entry.setUser(waiting);
+                entry.setPosition(position);
+                sessionWaitlistRepository.save(entry);
+            }
+            position++;
+        }
+        log.info("Seeded demo session '{}' (booking {}, session {}, status {}).",
+                title, booking.getId(), session.getId(), session.getStatus());
+    }
+
+    /** Registers a participant without creating duplicate session memberships. */
+    private void seedParticipant(StudySession session, User user) {
+        if (sessionParticipantRepository.existsBySession_IdAndUser_Id(session.getId(), user.getId())) {
+            return;
+        }
+        SessionParticipant participant = new SessionParticipant();
+        participant.setSession(session);
+        participant.setUser(user);
+        sessionParticipantRepository.save(participant);
+    }
+
 }
+
