@@ -1,4 +1,4 @@
-package com.ga.waslah.model;
+package com.ga.identity_service.model;
 
 public enum UserStatus {
     ACTIVE,
