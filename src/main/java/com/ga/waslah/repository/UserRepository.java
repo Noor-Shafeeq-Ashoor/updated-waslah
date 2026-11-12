@@ -1,5 +1,7 @@
 package com.ga.waslah.repository;
 
+import com.ga.waslah.model.Role;
+import com.ga.waslah.model.UserStatus;
 import com.ga.waslah.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import jakarta.persistence.LockModeType;
@@ -12,9 +14,9 @@ public interface UserRepository extends
         JpaRepository<User, Long>,
         org.springframework.data.jpa.repository.JpaSpecificationExecutor<User> {
 
-    long countByRole(com.ga.waslah.model.Role role);
+    long countByRole(Role role);
 
-    long countByStatus(com.ga.waslah.model.UserStatus status);
+    long countByStatus(UserStatus status);
 
     Optional<User> findByUsername(String username);
 

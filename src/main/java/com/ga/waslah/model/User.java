@@ -1,6 +1,8 @@
 package com.ga.waslah.model;
 
 
+import com.ga.waslah.model.Role;
+import com.ga.waslah.model.UserStatus;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;

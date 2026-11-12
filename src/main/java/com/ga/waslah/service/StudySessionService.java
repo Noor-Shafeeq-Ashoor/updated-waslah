@@ -1,5 +1,6 @@
 package com.ga.waslah.service;
 
+import com.ga.waslah.model.Role;
 import com.ga.waslah.dto.CreateStudySessionRequest;
 import com.ga.waslah.dto.JoinSessionResponse;
 import com.ga.waslah.dto.SessionEventResponse;

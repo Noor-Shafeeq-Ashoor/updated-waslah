@@ -4,7 +4,6 @@ import com.ga.waslah.dto.ForgotPasswordRequest;
 import com.ga.waslah.dto.LoginRequest;
 import com.ga.waslah.dto.LoginResponse;
 import com.ga.waslah.dto.ResetPasswordRequest;
-import com.ga.waslah.exception.BadRequestException;
 import com.ga.waslah.exception.ForbiddenException;
 import com.ga.waslah.model.User;
 import com.ga.waslah.model.UserStatus;

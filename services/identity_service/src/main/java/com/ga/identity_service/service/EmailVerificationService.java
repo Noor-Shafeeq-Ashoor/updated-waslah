@@ -24,6 +24,11 @@ public class EmailVerificationService {
     private final EmailVerificationTokenRepository tokenRepository;
     private final EmailService emailService;
 
+    public EmailVerificationService(EmailVerificationTokenRepository tokenRepository, EmailService emailService) {
+        this.tokenRepository = tokenRepository;
+        this.emailService = emailService;
+    }
+
     @Value("${app.base-url:http://localhost:8081}")
     private String baseUrl;
 
