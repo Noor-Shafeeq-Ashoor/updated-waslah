@@ -78,28 +78,19 @@ public class AuthController {
         // ACCOUNT STATUS
         if (user.getStatus() == UserStatus.INACTIVE) {
             log.warn("Login denied: account is inactive");
-
-            throw new ForbiddenException(
-                    "Your account is inactive and cannot be used"
-            );
+            throw new ForbiddenException("Your account is inactive and cannot be used");
         }
 
         // EMAIL VERIFICATION
         if (!user.isEmailVerified()) {
             log.warn("Login denied: email is not verified");
-
-            throw new ForbiddenException(
-                    "Please verify your email before logging in"
-            );
+            throw new ForbiddenException("Please verify your email before logging in");
         }
 
         // TEMPORARY LOGIN LOCK
         if (userService.isLoginLocked(user)) {
             log.warn("Login denied: account is temporarily locked");
-
-            throw new ForbiddenException(
-                    "Too many failed login attempts. Please try again later."
-            );
+            throw new ForbiddenException("Too many failed login attempts. Please try again later.");
         }
 
         // AUTHENTICATION
@@ -163,9 +154,7 @@ public class AuthController {
     ) {
 
         emailVerificationService.verifyEmail(token);
-
         log.info("Email verification completed");
-
         return "Email verified successfully. You can now login.";
     }
 
