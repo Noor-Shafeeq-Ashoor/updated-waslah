@@ -29,6 +29,21 @@ public class JwtService {
         return generateToken(username, null);
     }
 
+    public String generateToken(Long userId, String username, String role) {
+        return Jwts.builder()
+                .setSubject(username)
+                .claim("uid", userId)
+                .claim("role", role)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + 86400000))
+                .signWith(secretKey)
+                .compact();
+    }
+
+    /**
+     * Creates a token that also carries the user's role as a "role" claim.
+     * Kept for existing tests; login uses generateToken(userId, username, role).
+     */
     public String generateToken(String username, String role) {
 
         io.jsonwebtoken.JwtBuilder builder = Jwts.builder();
@@ -39,7 +54,11 @@ public class JwtService {
         return builder
                 .setSubject(username)
                 .setIssuedAt(new Date())
-                .setExpiration( new Date(System.currentTimeMillis() + 86400000 )
+                .setExpiration(
+                        new Date(
+                                System.currentTimeMillis()
+                                        + 86400000
+                        )
                 )
                 .signWith(secretKey)
                 .compact();
@@ -49,7 +68,10 @@ public class JwtService {
         return extractClaim(token, Claims::getSubject);
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails) {
+    public boolean isTokenValid(
+            String token,
+            UserDetails userDetails
+    ) {
 
         String username = extractUsername(token);
 
