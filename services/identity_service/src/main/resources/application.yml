@@ -1,0 +1,68 @@
+# All environment-specific values come from environment variables (see services/.env.example).
+server:
+  port: ${PORT:8081}
+
+spring:
+  application:
+    name: identity-service
+  config:
+    # Local runs read services/.env (from the service folder, the services folder or the repo root).
+    # In Docker and AWS the same names come from real environment variables instead.
+    import:
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+      - optional:file:services/.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/waslah}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # validate: the service never changes tables; it fails fast if its entities do not match them.
+      ddl-auto: ${DDL_AUTO:validate}
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_APP_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+
+jwt:
+  secret: ${JWT_SECRET}
+
+internal:
+  token: ${INTERNAL_TOKEN:}
+
+services:
+  career-url: ${CAREER_URL:http://localhost:8082}
+  workspace-url: ${WORKSPACE_URL:http://localhost:8083}
+
+app:
+  base-url: ${APP_BASE_URL:http://localhost:5173}
+  upload:
+    profile-images-dir: ${PROFILE_IMAGES_DIR:uploads/profile-images}
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    email: ${ADMIN_EMAIL:admin@waslah.com}
+    password: ${ADMIN_PASSWORD:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.ga.waslah: INFO
