@@ -6,93 +6,88 @@ import com.ga.identity_service.model.EmailVerificationToken;
 import com.ga.identity_service.model.User;
 import com.ga.identity_service.repository.EmailVerificationTokenRepository;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 
 @Service
-//@RequiredArgsConstructor
 public class EmailVerificationService {
 
     private final EmailVerificationTokenRepository tokenRepository;
     private final EmailService emailService;
 
-    public EmailVerificationService(EmailVerificationTokenRepository tokenRepository, EmailService emailService) {
+    // Public address of this API, used to build links in emails.
+    @Value("${app.base-url:http://localhost:8080}")
+    private String baseUrl = "http://localhost:8080";
+
+    public EmailVerificationService(
+            EmailVerificationTokenRepository tokenRepository,
+            EmailService emailService
+    ) {
         this.tokenRepository = tokenRepository;
         this.emailService = emailService;
     }
 
-    @Value("${app.base-url:http://localhost:8081}")
-    private String baseUrl;
-
-    @Transactional
     public void createAndSendVerificationToken(User user) {
 
-        tokenRepository.deleteByUser(user);
-        tokenRepository.flush();
 
+        tokenRepository.deleteByUser(user);
         String tokenValue = UUID.randomUUID().toString();
 
-        EmailVerificationToken token = new EmailVerificationToken();
-        token.setToken(tokenValue);
-        token.setUser(user);
-        token.setExpiresAt(LocalDateTime.now().plusHours(24));
+        EmailVerificationToken verificationToken = new EmailVerificationToken();
 
-        tokenRepository.save(token);
+        verificationToken.setToken(tokenValue);
+        verificationToken.setUser(user);
+        verificationToken.setExpiresAt(
+                LocalDateTime.now().plusHours(24)
+        );
 
-        String link = baseUrl + "/auth/verify-email?token="
-                + tokenValue;
+        tokenRepository.save(verificationToken);
 
-        Runnable sendEmail = () ->
-                emailService.sendVerificationEmail(
-                        user.getEmail(), link);
+        String verificationLink =
+                baseUrl + "/auth/verify-email?token="
+                        + tokenValue;
 
-        if (TransactionSynchronizationManager
-                .isSynchronizationActive()
-                && TransactionSynchronizationManager
-                .isActualTransactionActive()) {
-
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            sendEmail.run();
-                        }
-                    });
-        } else {
-            sendEmail.run();
-        }
+        emailService.sendVerificationEmail(
+                user.getEmail(),
+                verificationLink
+        );
     }
 
     @Transactional
     public void verifyEmail(String tokenValue) {
 
-        EmailVerificationToken token =
+        EmailVerificationToken verificationToken =
                 tokenRepository.findByToken(tokenValue)
                         .orElseThrow(() ->
                                 new BadRequestException(
-                                        "Invalid verification token"));
+                                        "Invalid verification token"
+                                )
+                        );
 
-        if (!token.getExpiresAt().isAfter(LocalDateTime.now())) {
+        if (verificationToken.getExpiresAt()
+                .isBefore(LocalDateTime.now())) {
+
+            tokenRepository.delete(verificationToken);
+
             throw new BadRequestException(
-                    "Verification token has expired");
+                    "Verification token has expired"
+            );
         }
 
-        User user = token.getUser();
+        User user = verificationToken.getUser();
 
         if (user.isEmailVerified()) {
             throw new ConflictException(
-                    "Email is already verified");
+                    "Email is already verified"
+            );
         }
 
         user.setEmailVerified(true);
-        tokenRepository.delete(token);
+        tokenRepository.delete(verificationToken);
     }
 }

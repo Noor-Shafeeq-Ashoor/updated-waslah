@@ -1,6 +1,5 @@
 package com.ga.identity_service.security;
 
-import com.ga.identity_service.security.RateLimitingInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;

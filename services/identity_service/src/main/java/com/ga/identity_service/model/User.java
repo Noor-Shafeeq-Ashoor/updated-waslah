@@ -1,4 +1,3 @@
-
 package com.ga.identity_service.model;
 
 import jakarta.persistence.*;
@@ -8,14 +7,14 @@ import java.time.LocalDateTime;
 
 @AllArgsConstructor
 @NoArgsConstructor
-@Getter
-@Setter
 @ToString
+@Setter
+@Getter
 @Entity
 @Table(name = "users")
 public class User {
-
     @Id
+    @Column
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
@@ -26,7 +25,6 @@ public class User {
     private String email;
 
     @Column(nullable = false)
-    @ToString.Exclude
     private String password;
 
     @Enumerated(EnumType.STRING)
@@ -40,6 +38,7 @@ public class User {
     @Column(nullable = false)
     private int failedLoginAttempts = 0;
 
+    @Column
     private LocalDateTime lockedUntil;
 
     @Column(nullable = false)
@@ -47,6 +46,6 @@ public class User {
 
     @OneToOne(cascade = CascadeType.ALL)
     @JoinColumn(name = "profile_id")
-    @ToString.Exclude
     private UserProfile userProfile;
+
 }

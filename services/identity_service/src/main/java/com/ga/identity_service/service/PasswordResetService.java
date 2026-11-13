@@ -28,7 +28,7 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.base-url:http://localhost:8081}")
-    private String baseUrl;
+    private String baseUrl = "http://localhost:8080";
 
     @Transactional
     public void createAndSendResetToken(String email) {

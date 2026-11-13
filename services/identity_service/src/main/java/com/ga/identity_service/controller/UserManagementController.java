@@ -22,13 +22,6 @@ public class UserManagementController {
 
     private final UserService userService;
 
-    /**
-     * Deactivates a user account on behalf of the authenticated admin.
-     *
-     * @param id ID of the account to deactivate
-     * @param authentication authenticated administrator's identity
-     * @return HTTP 204 if the account is deactivated successfully
-     */
     @Operation(
             summary = "Deactivate a user (admin)",
             description = "Soft delete: sets the account status to INACTIVE so it can no longer log in; history is preserved. Writes an audit-log entry. ADMIN only."
@@ -53,13 +46,7 @@ public class UserManagementController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Changes the password for the currently authenticated user.
-     *
-     * @param request current and new password details
-     * @param authentication identity of the authenticated user
-     * @return HTTP 204 if the password is changed successfully
-     */
+
     @Operation(
             summary = "Change own password",
             description = "Requires the current password; the new password must be at least 8 characters and different from the current one."

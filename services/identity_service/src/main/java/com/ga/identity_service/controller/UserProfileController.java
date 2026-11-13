@@ -41,12 +41,6 @@ public class UserProfileController {
 
     private final UserProfileService userProfileService;
 
-    /**
-     * Retrieves the authenticated user's profile.
-     *
-     * @param authentication current authenticated user
-     * @return profile details as a response DTO
-     */
     @Operation(
             summary = "Get my profile",
             description = "Returns the caller's profile (404 until it has been created with PUT /api/profile)."
@@ -57,27 +51,17 @@ public class UserProfileController {
             @ApiResponse(responseCode = "404", description = "Resource not found")
     })
     @GetMapping
-    public ResponseEntity<UserProfileResponse> getProfile(
-            Authentication authentication
-    ) {
+    public ResponseEntity<UserProfileResponse> getProfile(Authentication authentication) {
 
         String username = authentication.getName();
 
         UserProfile profile = userProfileService.getProfile(username);
 
         // Convert the entity into a safe API response.
-        return ResponseEntity.ok(
-                userProfileService.toResponse(profile)
-        );
+        return ResponseEntity.ok(userProfileService.toResponse(profile));
     }
 
-    /**
-     * Creates or updates the authenticated user's profile.
-     *
-     * @param authentication current authenticated user
-     * @param request validated profile information
-     * @return updated profile details as a response DTO
-     */
+
     @Operation(
             summary = "Create or update my profile",
             description = "Creates the profile on first call. Phone must be exactly 8 digits."
@@ -95,25 +79,13 @@ public class UserProfileController {
 
         String username = authentication.getName();
 
-        UserProfile updatedProfile = userProfileService.updateProfile(
-                username,
-                request
-        );
+        UserProfile updatedProfile = userProfileService.updateProfile(username, request);
 
         // Return the DTO rather than exposing the JPA entity.
-        return ResponseEntity.ok(
-                userProfileService.toResponse(updatedProfile)
-        );
+        return ResponseEntity.ok(userProfileService.toResponse(updatedProfile));
     }
 
-    /**
-     * Downloads the authenticated user's stored profile image.
-     *
-     * The response contains the actual image bytes, not JSON.
-     *
-     * @param authentication current authenticated user
-     * @return image resource with the appropriate content type
-     */
+
     @Operation(
             summary = "Download my profile picture",
             description = "Returns the caller's stored profile image (image/jpeg or image/png)."
@@ -124,9 +96,7 @@ public class UserProfileController {
             @ApiResponse(responseCode = "404", description = "No profile or no image uploaded")
     })
     @GetMapping("/image")
-    public ResponseEntity<Resource> getProfileImage(
-            Authentication authentication
-    ) {
+    public ResponseEntity<Resource> getProfileImage(Authentication authentication) {
 
         Resource image = userProfileService.getProfileImage(
                 authentication.getName()
@@ -177,14 +147,9 @@ public class UserProfileController {
             Authentication authentication
     ) {
 
-        UserProfile updatedProfile = userProfileService.updateProfileImage(
-                authentication.getName(),
-                image
-        );
+        UserProfile updatedProfile = userProfileService.updateProfileImage(authentication.getName(), image);
 
         // Return the updated filename as part of the profile DTO.
-        return ResponseEntity.ok(
-                userProfileService.toResponse(updatedProfile)
-        );
+        return ResponseEntity.ok(userProfileService.toResponse(updatedProfile));
     }
 }

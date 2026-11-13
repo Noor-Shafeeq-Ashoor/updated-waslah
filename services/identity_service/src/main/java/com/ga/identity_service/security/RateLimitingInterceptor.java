@@ -32,14 +32,7 @@ public class RateLimitingInterceptor implements HandlerInterceptor {
     // Above this many tracked clients, counters from finished windows are removed.
     private static final int CLEANUP_THRESHOLD = 1000;
 
-    /**
-     * Checks whether a request exceeds the limit for its endpoint.
-     *
-     * @param request incoming HTTP request
-     * @param response HTTP response to update if the request is rejected
-     * @param handler selected request handler
-     * @return true if the request may continue; false if it is rate-limited
-     */
+
     @Override
     public boolean preHandle(
             HttpServletRequest request,
@@ -97,15 +90,12 @@ public class RateLimitingInterceptor implements HandlerInterceptor {
             // Reject requests once the endpoint's allowed limit is exceeded.
             if (counter.count > limit) {
 
-                log.warn(
-                        "Rate limit exceeded for endpoint {}. Allowed requests: {}",
+                log.warn("Rate limit exceeded for endpoint {}. Allowed requests: {}",
                         path,
                         limit
                 );
 
-                response.setStatus(
-                        HttpStatus.TOO_MANY_REQUESTS.value()
-                );
+                response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
 
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
@@ -135,10 +125,6 @@ public class RateLimitingInterceptor implements HandlerInterceptor {
         return true;
     }
 
-    /**
-     * Stores the request count and the start time of the current time window.
-     * Access to each counter is synchronized in preHandle.
-     */
     private static class RequestCounter {
 
         private long startTime = Instant.now().getEpochSecond();
