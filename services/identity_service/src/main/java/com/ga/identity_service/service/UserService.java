@@ -115,7 +115,9 @@ public class UserService {
 
         auditService.log(performedBy, "USER_REACTIVATED", "USER", user.getId());
 
-   }
+        log.info("Admin {} deactivated user account {}", performedBy, userId);
+    }
+
 
     // Lists users for the admin dashboard with optional filters.
 

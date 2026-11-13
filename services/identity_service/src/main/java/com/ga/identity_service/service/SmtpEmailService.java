@@ -9,8 +9,6 @@ import org.springframework.stereotype.Service;
 
 
 @Service
-@Profile("!dev")
-
 public class SmtpEmailService implements EmailService {
 
     private final JavaMailSender mailSender;

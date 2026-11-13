@@ -79,21 +79,23 @@ public class UserProfileService {
             throw new ResourceNotFoundException("Profile not found");
         }
 
-        String oldFilename = profile.getProfileImage();
-        String newFilename = profileImageStorageService.storeImage(image);
+        String previousFilename = profile.getProfileImage();
 
-        try {
-            profile.setProfileImage(newFilename);
-            UserProfile saved = userProfileRepository.saveAndFlush(profile);
+        // Store the image and receive its generated UUID filename.
+        String storedFilename =
+                profileImageStorageService.storeImage(image);
 
-            // Do not delete the old file here: the database
-            // transaction may still roll back.
-            return saved;
-        } catch (RuntimeException ex) {
-            profileImageStorageService.deleteImage(newFilename);
-            throw ex;
-        }
+        // Save the generated filename, never the original filename.
+        profile.setProfileImage(storedFilename);
+
+        UserProfile savedProfile = userProfileRepository.save(profile);
+
+        // Remove the replaced file so old pictures do not pile up on disk.
+        profileImageStorageService.deleteImage(previousFilename);
+
+        return savedProfile;
     }
+
 
     @Transactional(readOnly = true)
     public Resource getProfileImage(String username) {
