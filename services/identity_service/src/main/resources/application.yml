@@ -65,4 +65,4 @@ management:
 
 logging:
   level:
-    com.ga.waslah: INFO
+    com.ga.identity_service: INFO
