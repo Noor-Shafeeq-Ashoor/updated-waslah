@@ -1,16 +1,15 @@
 package com.ga.identity_service.service;
 
-import com.ga.waslah.dto.EmployerRequestRequest;
-import com.ga.waslah.dto.EmployerRequestResponse;
-import com.ga.waslah.exception.ConflictException;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.EmployerRequest;
-import com.ga.waslah.model.EmployerRequestStatus;
-import com.ga.waslah.model.Role;
-import com.ga.waslah.model.User;
-import com.ga.waslah.repository.EmployerRequestRepository;
-import com.ga.waslah.repository.UserRepository;
-import com.ga.waslah.service.AuditService;
+import com.ga.identity_service.dto.EmployerRequestRequest;
+import com.ga.identity_service.dto.EmployerRequestResponse;
+import com.ga.identity_service.exception.ConflictException;
+import com.ga.identity_service.exception.ResourceNotFoundException;
+import com.ga.identity_service.model.EmployerRequest;
+import com.ga.identity_service.model.EmployerRequestStatus;
+import com.ga.identity_service.model.Role;
+import com.ga.identity_service.model.User;
+import com.ga.identity_service.repository.EmployerRequestRepository;
+import com.ga.identity_service.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

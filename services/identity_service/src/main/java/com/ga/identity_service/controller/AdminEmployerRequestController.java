@@ -1,7 +1,7 @@
 package com.ga.identity_service.controller;
 
 import com.ga.identity_service.dto.EmployerRequestResponse;
-import com.ga.identity_service.model.EmployerRequest;
+import com.ga.identity_service.model.*;
 import com.ga.identity_service.service.EmployerRequestService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -42,8 +42,8 @@ public class AdminEmployerRequestController {
                 employerRequestService.getRequests(
                                 "ALL".equalsIgnoreCase(status)
                                         ? null
-                                        : com.ga.waslah.model.EmployerRequestStatus
-                                        .valueOf(status.toUpperCase()))
+                                        : EmployerRequestStatus.valueOf(status.toUpperCase())
+                        )
                         .stream()
                         .map(this::toDTO)
                         .toList();
