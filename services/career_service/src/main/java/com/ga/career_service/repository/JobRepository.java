@@ -25,7 +25,8 @@ public interface JobRepository extends
 
 
     /** Jobs posted by one employer, newest first. */
-    List<Job> findByCreatedBy_UsernameOrderByCreatedAtDesc(String username);
+    List<Job> findByCreatedByUserIdOrderByCreatedAtDesc(Long createdByUserId);
+
 
     List<Job> findByJobType(JobType jobType);
 
