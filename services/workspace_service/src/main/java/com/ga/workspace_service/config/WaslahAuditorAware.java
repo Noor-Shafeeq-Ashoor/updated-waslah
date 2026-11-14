@@ -1,7 +1,7 @@
 
 package com.ga.workspace_service.config;
 
-import com.ga.waslah.security.MyUserDetails;
+import com.ga.workspace_service.security.JwtPrincipal;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -15,8 +15,7 @@ public class WaslahAuditorAware implements AuditorAware<Long> {
 
     @Override
     public Optional<Long> getCurrentAuditor() {
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null
                 || !authentication.isAuthenticated()
@@ -24,12 +23,10 @@ public class WaslahAuditorAware implements AuditorAware<Long> {
             return Optional.empty();
         }
 
-        Object principal = authentication.getPrincipal();
-
-        if (principal instanceof MyUserDetails userDetails) {
-            return Optional.ofNullable(userDetails.getUser().getId());
+        if (authentication.getPrincipal() instanceof JwtPrincipal principal) {
+            return Optional.ofNullable(principal.id());
         }
 
         return Optional.empty();
-    }
+}
 }
