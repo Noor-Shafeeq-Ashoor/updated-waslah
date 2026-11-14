@@ -6,6 +6,8 @@ import com.ga.career_service.exception.*;
 import com.ga.career_service.model.*;
 import com.ga.career_service.repository.*;
 
+import com.ga.career_service.security.CurrentUser;
+import com.ga.career_service.security.JwtPrincipal;
 import com.ga.career_service.util.*;
 
 import org.springframework.data.domain.Page;
@@ -14,6 +16,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -24,42 +27,32 @@ import java.util.Set;
 public class JobService {
 
     private final JobRepository jobRepository;
-    private final UserRepository userRepository;
+    private final CurrentUser currentUser;
+    private final IdentityClient identityClient;
     private final AuditService auditService;
 
-    /**
-     * Creates the service with its required repositories.
-     *
-     * @param jobRepository repository used to access job records
-     * @param userRepository repository used to access user records
-     */
+
     public JobService(
             JobRepository jobRepository,
-            UserRepository userRepository,
+            CurrentUser currentUser,
+            IdentityClient identityClient,
             AuditService auditService
     ) {
         this.jobRepository = jobRepository;
-        this.userRepository = userRepository;
+        this.currentUser = currentUser;
+        this.identityClient = identityClient;
         this.auditService = auditService;
     }
 
-    /**
-     * Creates a new job for an approved employer.
-     *
-     * @param username username of the authenticated employer
-     * @param request job details supplied by the client
-     * @return the created job as a response DTO
-     * @throws ResourceNotFoundException if the user does not exist
-     * @throws ForbiddenException if the user is not an employer
-     */
+
     public JobResponse createJob(
             String username,
             JobRequest request
     ) {
-        User user = getUser(username);
+        JwtPrincipal user = getUser(username);
 
         // Only users with the approved EMPLOYER role can create jobs.
-        if (user.getRole() != Role.EMPLOYER) {
+        if (user.role() != Role.EMPLOYER) {
             throw new ForbiddenException(
                     "Only approved employers can create jobs"
             );
@@ -82,7 +75,7 @@ public class JobService {
         job.setCompanyName(request.getCompanyName());
 
         job.setStatus(JobStatus.OPEN);
-        job.setCreatedBy(user);
+        job.setCreatedByUserId(user.id());
 
         Job savedJob = jobRepository.save(job);
 
@@ -96,15 +89,7 @@ public class JobService {
         return toResponse(savedJob);
     }
 
-    /**
-     * Retrieves all jobs without pagination.
-     *
-     * <p>This method is retained for backward compatibility with
-     * existing callers. The jobs endpoint will use {@link #getJobs}
-     * when its controller is updated.</p>
-     *
-     * @return all jobs as response DTOs
-     */
+
     public List<JobResponse> getAllJobs() {
         return jobRepository.findAll()
                 .stream()
@@ -112,12 +97,7 @@ public class JobService {
                 .toList();
     }
 
-    /**
-     * Retrieves jobs using optional filters, pagination, and sorting.
 
-     * <p>Supported filters include job type, status, location, and a
-     * keyword matching the job title or company name.</p>
-   */
     public PageResponse<JobResponse> getJobs(
             JobType jobType,
             JobStatus status,
@@ -188,20 +168,11 @@ public class JobService {
      * (open and closed), for the employer's own dashboard.
      */
     public List<JobResponse> getMyJobs(String username) {
-        return jobRepository
-                .findByCreatedBy_UsernameOrderByCreatedAtDesc(username)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return toResponses(jobRepository
+                .findByCreatedByUserIdOrderByCreatedAtDesc(getUser(username).id()));
     }
 
-    /**
-     * Retrieves a job by its ID.
-     *
-     * @param id ID of the requested job
-     * @return the job as a response DTO
-     * @throws ResourceNotFoundException if the job does not exist
-     */
+
     public JobResponse getJobById(Long id) {
         Job job = jobRepository.findById(id)
                 .orElseThrow(() ->
@@ -224,9 +195,9 @@ public class JobService {
             String username,
             JobRequest request
     ) {
-        User user = getUser(username);
+        JwtPrincipal user = getUser(username);
 
-        if (user.getRole() != Role.EMPLOYER) {
+        if (user.role() != Role.EMPLOYER) {
             throw new ForbiddenException(
                     "Only approved employers can update jobs"
             );
@@ -238,7 +209,7 @@ public class JobService {
                 );
 
         // Employers may modify only their own jobs.
-        checkOwnership(job, username);
+        checkOwnership(job, user);
 
         // Closed jobs cannot be edited.
         if (job.getStatus() == JobStatus.CLOSED) {
@@ -273,18 +244,11 @@ public class JobService {
         return toResponse(savedJob);
     }
 
-    /**
-     * Closes a job owned by the specified employer.
-     *
-     * <p>The job is not physically deleted; its status is changed to CLOSED.</p>
-     *
-     * @param id ID of the job to close
-     * @param username username of the authenticated employer
-     */
-    public void deleteJob(Long id, String username) {
-        User user = getUser(username);
 
-        if (user.getRole() != Role.EMPLOYER) {
+    public void deleteJob(Long id, String username) {
+        JwtPrincipal user = getUser(username);
+
+        if (user.role() != Role.EMPLOYER) {
             throw new ForbiddenException(
                     "Only approved employers can close jobs"
             );
@@ -295,7 +259,7 @@ public class JobService {
                         new ResourceNotFoundException("Job not found")
                 );
 
-        checkOwnership(job, username);
+        checkOwnership(job, user);
 
         if (job.getStatus() == JobStatus.CLOSED) {
             throw new ForbiddenException("Job is already closed");
@@ -314,42 +278,36 @@ public class JobService {
     }
 
     /**
-     * Retrieves a user by username.
-     *
-     * @param username username to search for
-     * @return the matching user
-     * @throws ResourceNotFoundException if the user does not exist
+     * Returns the logged-in user from the JWT (id, username, role).
+     * The username argument is the same authentication name the controller passes.
      */
-    private User getUser(String username) {
-        return userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("User not found")
-                );
+
+    private JwtPrincipal getUser(String username) {
+        return currentUser.get();
     }
 
-    /**
-     * Verifies that a job belongs to the specified employer.
-     *
-     * @param job job whose ownership must be checked
-     * @param username username of the requesting user
-     * @throws ForbiddenException if the user does not own the job
-     */
-    private void checkOwnership(Job job, String username) {
-        if (job.getCreatedBy() == null
-                || !job.getCreatedBy().getUsername().equals(username)) {
+
+    private void checkOwnership(Job job, JwtPrincipal user) {
+        if (job.getCreatedByUserId() == null
+                || !job.getCreatedByUserId().equals(user.id())) {
             throw new ForbiddenException(
                     "You are not allowed to modify this job"
             );
         }
     }
 
-    /**
-     * Converts a job entity into its API response DTO.
-     *
-     * @param job job entity to convert
-     * @return the corresponding job response
-     */
+    private List<JobResponse> toResponses(List<Job> jobs) {
+        Map<Long, String> names = identityClient.usernames(
+                jobs.stream().map(Job::getCreatedByUserId).toList()
+        );
+        return jobs.stream().map(job -> toResponse(job, names)).toList();
+    }
+
     private JobResponse toResponse(Job job) {
+        return toResponse(job, identityClient.usernames(List.of(job.getCreatedByUserId())));
+    }
+
+    private JobResponse toResponse(Job job, Map<Long, String> names) {
         return new JobResponse(
                 job.getId(),
                 job.getTitle(),
@@ -362,7 +320,7 @@ public class JobService {
                 job.getStatus(),
                 job.getCreatedAt(),
                 job.getUpdatedAt(),
-                job.getCreatedBy().getUsername(),
+                IdentityClient.displayName(names, job.getCreatedByUserId()),
                 job.getVacancies() == null ? 1 : job.getVacancies(),
                 job.getFilledVacancies() == null ? 0 : job.getFilledVacancies()
 
