@@ -1,8 +1,8 @@
 
 package com.ga.workspace_service.repository;
 
-import com.ga.waslah.model.SessionParticipant;
-import com.ga.waslah.model.StudySessionStatus;
+import com.ga.workspace_service.model.SessionParticipant;
+import com.ga.workspace_service.model.StudySessionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

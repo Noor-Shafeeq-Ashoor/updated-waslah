@@ -1,7 +1,7 @@
 
 package com.ga.workspace_service.repository;
 
-import com.ga.waslah.model.SessionWaitlist;
+import com.ga.workspace_service.model.SessionWaitlist;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

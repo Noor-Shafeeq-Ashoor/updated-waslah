@@ -1,9 +1,9 @@
 
 package com.ga.workspace_service.repository;
 
-import com.ga.waslah.model.Booking;
-import com.ga.waslah.model.BookingStatus;
-import com.ga.waslah.model.StudySpace;
+import com.ga.workspace_service.model.Booking;
+import com.ga.workspace_service.model.BookingStatus;
+import com.ga.workspace_service.model.StudySpace;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -19,7 +19,7 @@ public interface BookingRepository extends
         JpaRepository<Booking, Long>,
         JpaSpecificationExecutor<Booking> {
 
-    List<Booking> findByUser_Username(String username);
+    List<Booking> findByUserId(Long userId);
     long countByStatus(BookingStatus status);
     List<Booking> findByStudySpace(StudySpace studySpace);
     boolean existsByStudySpaceAndStatusInAndStartTimeLessThanAndEndTimeGreaterThan(
@@ -29,7 +29,7 @@ public interface BookingRepository extends
             LocalDateTime requestedStartTime
     );
 
-    List<Booking> findByStudySpace_Cafe_Manager_Username(String username);
+    List<Booking> findByStudySpace_Cafe_ManagerUserId(Long managerUserId);
 
     List<Booking> findByStatusAndEndTimeLessThan(
             BookingStatus status,

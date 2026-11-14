@@ -1,6 +1,6 @@
 package com.ga.workspace_service.repository;
 
-import com.ga.waslah.model.SessionEvent;
+import com.ga.workspace_service.model.SessionEvent;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
