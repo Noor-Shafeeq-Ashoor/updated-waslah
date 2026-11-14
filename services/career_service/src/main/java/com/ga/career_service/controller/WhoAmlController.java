@@ -1,7 +1,7 @@
 package com.ga.career_service.controller;
 
-import com.ga.waslah.career.security.CurrentUser;
-import com.ga.waslah.career.security.JwtPrincipal;
+import com.ga.career_service.security.CurrentUser;
+import com.ga.career_service.security.JwtPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;

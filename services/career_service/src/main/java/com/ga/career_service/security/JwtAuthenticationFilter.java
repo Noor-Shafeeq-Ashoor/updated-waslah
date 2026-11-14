@@ -1,7 +1,7 @@
 package com.ga.career_service.security;
 
-import com.ga.career_service.security.MyUserDetailsService;
-
+import com.ga.career_service.model.Role;
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -10,14 +10,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Authenticates requests that contain a Bearer JWT.
@@ -31,11 +32,7 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final MyUserDetailsService userDetailsService;
 
-    /**
-     * Extracts and validates the JWT before setting the security context.
- */
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
@@ -45,9 +42,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader("Authorization");
 
-        // Leave authentication decisions to Spring Security when no Bearer
-        // token is provided. This allows public endpoints to remain accessible.
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+       if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -55,64 +50,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = authHeader.substring(7);
 
         try {
-            // Parsing may throw an exception for malformed or expired tokens.
-            String username = jwtService.extractUsername(token);
+            Claims claims = jwtService.extractAllClaims(token);
 
-            if (username == null) {
+            Number uid = claims.get("uid", Number.class);
+            String username = claims.getSubject();
+            String role = claims.get("role", String.class);
+
+            if (uid == null || username == null || role == null) {
+                log.warn("JWT rejected: missing uid, subject or role claim");
                 rejectInvalidToken(response);
                 return;
             }
 
-            if (SecurityContextHolder.getContext().getAuthentication() == null) {
+            JwtPrincipal principal = new JwtPrincipal(uid.longValue(), username, Role.valueOf(role));
 
-
-                UserDetails userDetails =
-                        userDetailsService.loadUserByUsername(username);
-
-               // Reject tokens belonging to deactivated accounts.
-               // The user is loaded from the database on each authenticated request.
-                if (!userDetails.isEnabled()) {log.warn("JWT rejected: user account is inactive");
-                    rejectInvalidToken(response);
-                    return;
-                }
-
-               // Validate the token signature, username, and expiration.
-                if (!jwtService.isTokenValid(token, userDetails)) {
-                    rejectInvalidToken(response);
-                    return;
-                }
-
-
-                // Set the authenticated user and their granted authorities.
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities()
-                        );
-
-                authentication.setDetails(
-                        new WebAuthenticationDetailsSource()
-                                .buildDetails(request)
-                );
-
-                SecurityContextHolder.getContext()
-                        .setAuthentication(authentication);
-            }
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                            principal,
+                            null,
+                            List.of(new SimpleGrantedAuthority("ROLE_" + principal.role().name()))
+                    );
+            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            SecurityContextHolder.getContext().setAuthentication(authentication);
 
         } catch (JwtException | IllegalArgumentException exception) {
-            // Do not log the token or expose parsing details to the client.
-            log.warn(
-                    "JWT rejected: {}",
-                    exception.getClass().getSimpleName()
-            );
-
-            rejectInvalidToken(response);
-            return;
-
-        } catch (UsernameNotFoundException exception) {
-            log.warn("JWT rejected because its user account was not found");
-
+            log.warn("JWT rejected: {}", exception.getClass().getSimpleName());
             rejectInvalidToken(response);
             return;
         }
@@ -127,7 +89,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws IOException {
 
         SecurityContextHolder.clearContext();
-
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");

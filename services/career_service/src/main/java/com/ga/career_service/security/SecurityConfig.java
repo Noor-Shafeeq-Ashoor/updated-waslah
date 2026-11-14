@@ -5,15 +5,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -23,18 +20,16 @@ import java.util.Map;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final InternalApiFilter internalApiFilter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
 
+    // No users table here: stops Spring Boot from creating a default in-memory user.
     @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration configuration
-    ) throws Exception {
-        return configuration.getAuthenticationManager();
+    public UserDetailsService userDetailsService() {
+        return username -> {
+            throw new UsernameNotFoundException(username);
+        };
     }
 
     @Bean
@@ -52,14 +47,13 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
+                        .requestMatchers(
+                                "/actuator/health/**"
+                        ).permitAll()
 
                         .requestMatchers(
-                                "/auth/register",
-                                "/auth/login",
-                                "/auth/forgot-password",
-                                "/auth/reset-password",
-                                "/auth/verify-email"
-                        ).permitAll()
+                                "/api/internal/**"
+                        ).hasRole("INTERNAL")
 
                         .anyRequest().authenticated()
                 )
@@ -70,36 +64,20 @@ public class SecurityConfig {
                         .authenticationEntryPoint(
                                 (request, response, authException) -> {
 
-                                    response.setStatus(
-                                            HttpStatus.UNAUTHORIZED.value()
-                                    );
+                                    response.setStatus(HttpStatus.UNAUTHORIZED.value());
 
-                                    response.setContentType(
-                                            "application/json"
-                                    );
+                                    response.setContentType("application/json");
 
                                     Map<String, Object> error =
                                             new HashMap<>();
 
-                                    error.put(
-                                            "status",
-                                            HttpStatus.UNAUTHORIZED.value()
-                                    );
+                                    error.put("status", HttpStatus.UNAUTHORIZED.value());
 
-                                    error.put(
-                                            "error",
-                                            "UNAUTHORIZED"
-                                    );
+                                    error.put("error", "UNAUTHORIZED");
 
-                                    error.put(
-                                            "message",
-                                            "Authentication is required"
-                                    );
+                                    error.put("message", "Authentication is required");
 
-                                    error.put(
-                                            "path",
-                                            request.getRequestURI()
-                                    );
+                                    error.put("path", request.getRequestURI());
 
                                     objectMapper.writeValue(
                                             response.getOutputStream(),
@@ -112,43 +90,28 @@ public class SecurityConfig {
                         .accessDeniedHandler(
                                 (request, response, accessDeniedException) -> {
 
-                                    response.setStatus(
-                                            HttpStatus.FORBIDDEN.value()
-                                    );
+                                    response.setStatus(HttpStatus.FORBIDDEN.value());
 
-                                    response.setContentType(
-                                            "application/json"
-                                    );
+                                    response.setContentType("application/json");
 
-                                    Map<String, Object> error =
-                                            new HashMap<>();
+                                    Map<String, Object> error = new HashMap<>();
 
-                                    error.put(
-                                            "status",
-                                            HttpStatus.FORBIDDEN.value()
-                                    );
+                                    error.put("status", HttpStatus.FORBIDDEN.value());
 
-                                    error.put(
-                                            "error",
-                                            "FORBIDDEN"
-                                    );
+                                    error.put("error", "FORBIDDEN");
 
-                                    error.put(
-                                            "message",
-                                            "You do not have permission to access this resource"
-                                    );
+                                    error.put("message", "You do not have permission to access this resource");
 
-                                    error.put(
-                                            "path",
-                                            request.getRequestURI()
-                                    );
+                                    error.put("path", request.getRequestURI());
 
-                                    objectMapper.writeValue(
-                                            response.getOutputStream(),
-                                            error
-                                    );
+                                    objectMapper.writeValue( response.getOutputStream(), error);
                                 }
                         )
+                )
+
+                .addFilterBefore(
+                        internalApiFilter,
+                        UsernamePasswordAuthenticationFilter.class
                 )
 
                 .addFilterBefore(

@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 /**
  * Handles application exceptions globally and converts them into
  * consistent HTTP error responses.
- *
+
  * This keeps error handling centralized instead of duplicating it
  * across individual controllers.
  */
@@ -25,13 +25,7 @@ import java.time.LocalDateTime;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * Handles requests for resources that do not exist.
-     *
-     * @param exception the exception describing the missing resource
-     * @param request the incoming HTTP request
-     * @return an HTTP 404 response
-     */
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(
             ResourceNotFoundException exception,
@@ -47,13 +41,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles invalid requests represented by BadRequestException.
-     *
-     * @param exception the exception containing the error message
-     * @param request the incoming HTTP request
-     * @return an HTTP 400 response
-     */
+
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ErrorResponse> handleBadRequest(
             BadRequestException exception,
@@ -69,15 +57,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles validation failures for request-body fields.
-     *
-     * Only the first validation error is returned to the client.
-     *
-     * @param exception the exception containing field validation errors
-     * @param request the incoming HTTP request
-     * @return an HTTP 400 response with a validation message
-     */
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(
             MethodArgumentNotValidException exception,
@@ -103,13 +83,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles conflicts, such as duplicate or already-processed requests.
-     *
-     * @param exception the exception describing the conflict
-     * @param request the incoming HTTP request
-     * @return an HTTP 409 response
-     */
+
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ErrorResponse> handleConflict(
             ConflictException exception,
@@ -125,13 +99,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles application-specific authorization failures.
-     *
-     * @param exception the exception describing the restriction
-     * @param request the incoming HTTP request
-     * @return an HTTP 403 response
-     */
+
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleForbiddenException(
             ForbiddenException exception,
@@ -147,16 +115,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles authorization failures raised by Spring Security.
-     *
-     * A generic message is returned to avoid exposing internal security
-     * details to the client.
-     *
-     * @param exception the authorization exception
-     * @param request the incoming HTTP request
-     * @return an HTTP 403 response
-     */
+
     @ExceptionHandler({
             AuthorizationDeniedException.class,
             AccessDeniedException.class
@@ -176,13 +135,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles authentication failures caused by invalid credentials.
-     *
-     * @param exception the authentication exception
-     * @param request the incoming HTTP request
-     * @return an HTTP 401 response with a generic message
-     */
+
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(
             BadCredentialsException exception,
@@ -199,16 +152,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles unexpected exceptions that have no more specific handler.
-     *
-     * Internal exception details are logged for troubleshooting, while
-     * the client receives a generic error message.
-     *
-     * @param exception the unexpected exception
-     * @param request the incoming HTTP request
-     * @return an HTTP 500 response
-     */
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneralException(
             Exception exception,
@@ -262,13 +206,7 @@ public class GlobalExceptionHandler {
     }
 
 
-    /**
-     * Handles invalid method arguments that cannot be processed.
-     *
-     * @param exception the exception describing the invalid argument
-     * @param request the incoming HTTP request
-     * @return an HTTP 400 response
-     */
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgumentException(
             IllegalArgumentException exception,
@@ -284,13 +222,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    /**
-     * Handles authentication failures caused by an inactive account.
-     *
-     * @param exception the exception indicating that the account is disabled
-     * @param request the incoming HTTP request
-     * @return an HTTP 403 response
-     */
+
     @ExceptionHandler(DisabledException.class)
     public ResponseEntity<ErrorResponse> handleDisabledException(
             DisabledException exception,
