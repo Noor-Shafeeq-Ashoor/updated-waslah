@@ -4,33 +4,42 @@ import com.ga.career_service.dto.JobApplicationRequest;
 import com.ga.career_service.dto.JobApplicationResponse;
 import com.ga.career_service.exception.ConflictException;
 import com.ga.career_service.exception.ForbiddenException;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.*;
-import com.ga.waslah.repository.JobApplicationRepository;
-import com.ga.waslah.repository.JobRepository;
-import com.ga.waslah.repository.UserRepository;
+import com.ga.career_service.exception.ResourceNotFoundException;
+import com.ga.career_service.model.ApplicationStatus;
+import com.ga.career_service.model.Job;
+import com.ga.career_service.model.JobApplication;
+import com.ga.career_service.model.JobStatus;
+import com.ga.career_service.model.Role;
+import com.ga.career_service.repository.JobApplicationRepository;
+import com.ga.career_service.repository.JobRepository;
+import com.ga.career_service.security.CurrentUser;
+import com.ga.career_service.security.JwtPrincipal;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class JobApplicationService {
 
     private final JobApplicationRepository jobApplicationRepository;
     private final JobRepository jobRepository;
-    private final UserRepository userRepository;
+    private final CurrentUser currentUser;
+    private final IdentityClient identityClient;
     private final AuditService auditService;
 
     public JobApplicationService(
             JobApplicationRepository jobApplicationRepository,
             JobRepository jobRepository,
-            UserRepository userRepository,
+            CurrentUser currentUser,
+            IdentityClient identityClient,
             AuditService auditService
     ) {
         this.jobApplicationRepository = jobApplicationRepository;
         this.jobRepository = jobRepository;
-        this.userRepository = userRepository;
+        this.currentUser = currentUser;
+        this.identityClient = identityClient;
         this.auditService = auditService;
     }
 
@@ -44,10 +53,10 @@ public class JobApplicationService {
             JobApplicationRequest request
     ) {
 
-        User user = getUser(username);
+        JwtPrincipal user = getUser(username);
 
         // Only normal users can apply
-        if (user.getRole() != Role.USER) {
+        if (user.role() != Role.USER) {
             throw new ForbiddenException(
                     "Only users can apply for jobs"
             );
@@ -76,7 +85,7 @@ public class JobApplicationService {
         // Prevent duplicate application
         if (jobApplicationRepository.existsByJobIdAndUserId(
                 jobId,
-                user.getId()
+                user.id()
         )) {
             throw new ConflictException(
                     "You have already applied for this job"
@@ -86,7 +95,7 @@ public class JobApplicationService {
         JobApplication application = new JobApplication();
 
         application.setJob(job);
-        application.setUser(user);
+        application.setUserId(user.id());
         application.setCoverLetter(request.getCoverLetter());
         application.setStatus(ApplicationStatus.PENDING);
 
@@ -111,13 +120,9 @@ public class JobApplicationService {
             String username
     ) {
 
-        User user = getUser(username);
+        JwtPrincipal user = getUser(username);
 
-        return jobApplicationRepository
-                .findByUserId(user.getId())
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return toResponses(jobApplicationRepository.findByUserId(user.id()));
     }
 
     // =========================
@@ -129,9 +134,9 @@ public class JobApplicationService {
             String username
     ) {
 
-        User user = getUser(username);
+        JwtPrincipal user = getUser(username);
 
-        if (user.getRole() != Role.EMPLOYER) {
+        if (user.role() != Role.EMPLOYER) {
             throw new ForbiddenException(
                     "Only employers can view job applications"
             );
@@ -145,20 +150,14 @@ public class JobApplicationService {
 
         // Employer can only see applications
         // for their own jobs
-        if (!job.getCreatedBy()
-                .getUsername()
-                .equals(username)) {
+        if (!job.getCreatedByUserId().equals(user.id())) {
 
             throw new ForbiddenException(
                     "You are not allowed to view applications for this job"
             );
         }
 
-        return jobApplicationRepository
-                .findByJobId(jobId)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return toResponses(jobApplicationRepository.findByJobId(jobId));
     }
 
     // =========================
@@ -172,9 +171,9 @@ public class JobApplicationService {
             String username
     ) {
 
-        User employer = getUser(username);
+        JwtPrincipal employer = getUser(username);
 
-        if (employer.getRole() != Role.EMPLOYER) {
+        if (employer.role() != Role.EMPLOYER) {
             throw new ForbiddenException(
                     "Only employers can update application status"
             );
@@ -188,12 +187,10 @@ public class JobApplicationService {
                                 ));
 
         Job job = jobRepository.findByIdForUpdate(application.getJob().getId()) .orElseThrow(() ->
-        new ResourceNotFoundException("Job not found"));
+                new ResourceNotFoundException("Job not found"));
 
         // Only the owner of the job can update applications
-        if (!job.getCreatedBy()
-                .getUsername()
-                .equals(username)) {
+        if (!job.getCreatedByUserId().equals(employer.id())) {
 
             throw new ForbiddenException(
                     "You are not allowed to update this application"
@@ -246,24 +243,32 @@ public class JobApplicationService {
     // HELPER
     // =========================
 
-    private User getUser(String username) {
+    /** Logged-in user from the JWT; username is the same authentication name the controller passes. */
+    private JwtPrincipal getUser(String username) {
+        return currentUser.get();
+    }
 
-        return userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "User not found"
-                        ));
+    private List<JobApplicationResponse> toResponses(List<JobApplication> applications) {
+        Map<Long, String> names = identityClient.usernames(
+                applications.stream().map(JobApplication::getUserId).toList()
+        );
+        return applications.stream().map(a -> toResponse(a, names)).toList();
+    }
+
+    private JobApplicationResponse toResponse(JobApplication application) {
+        return toResponse(application, identityClient.usernames(List.of(application.getUserId())));
     }
 
     private JobApplicationResponse toResponse(
-            JobApplication application
+            JobApplication application,
+            Map<Long, String> names
     ) {
 
         return new JobApplicationResponse(
                 application.getId(),
                 application.getJob().getId(),
                 application.getJob().getTitle(),
-                application.getUser().getUsername(),
+                IdentityClient.displayName(names, application.getUserId()),
                 application.getStatus(),
                 application.getCoverLetter(),
                 application.getAppliedAt()
