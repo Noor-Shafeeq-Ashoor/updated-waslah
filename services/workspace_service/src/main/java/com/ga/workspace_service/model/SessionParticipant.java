@@ -1,8 +1,6 @@
-
 package com.ga.workspace_service.model;
 
-import com.ga.waslah.model.AuditableEntity;
-import com.ga.waslah.model.User;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -38,10 +36,9 @@ public class SessionParticipant extends AuditableEntity {
     @ToString.Exclude
     private StudySession session;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    @ToString.Exclude
-    private User user;
+    // Participant's user id. Users live in identity-service, so there is no JPA link.
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime joinedAt;

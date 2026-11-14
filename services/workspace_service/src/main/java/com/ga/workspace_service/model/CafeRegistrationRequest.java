@@ -1,6 +1,5 @@
 package com.ga.workspace_service.model;
 
-import com.ga.waslah.model.User;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -32,11 +31,9 @@ public class CafeRegistrationRequest {
     @Column(nullable = false)
     private CafeRequestStatus status = CafeRequestStatus.PENDING;
 
-    // The user who submitted the request.
-    @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
-    @ToString.Exclude
-    private User requestedBy;
+    // Requesting user's id. Users live in identity-service, so there is no JPA link.
+    @Column(name = "user_id", nullable = false)
+    private Long requestedByUserId;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

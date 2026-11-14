@@ -1,7 +1,6 @@
 package com.ga.workspace_service.model;
 
-import com.ga.waslah.model.AuditableEntity;
-import com.ga.waslah.model.User;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -9,11 +8,10 @@ import java.time.LocalDateTime;
 
 /**
  * One row in a study session's history (who did what, and when).
- *
- * <p>Rows are written inside the same transaction, and under the same
+ Rows are written inside the same transaction, and under the same
  * advisory lock, as the change they describe. Their order therefore matches
  * the order in which the changes were actually applied, which makes this table
- * evidence of how concurrent requests were serialized.</p>
+ * evidence of how concurrent requests were serialized.
  */
 @Entity
 @Table(name = "session_events", indexes = {
@@ -35,11 +33,9 @@ public class SessionEvent extends AuditableEntity {
     @ToString.Exclude
     private StudySession session;
 
-    // The user the event is about; null for system events.
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
-    @ToString.Exclude
-    private User user;
+    // User the event is about; null for system events. Users live in identity-service, so there is no JPA link.
+    @Column(name = "user_id")
+    private Long userId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)

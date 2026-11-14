@@ -1,8 +1,5 @@
 package com.ga.workspace_service.model;
 
-import com.ga.waslah.model.AuditableEntity;
-import com.ga.waslah.model.Booking;
-import com.ga.waslah.model.Cafe;
 import jakarta.persistence.*;
 import lombok.*;
 

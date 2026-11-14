@@ -1,8 +1,6 @@
 package com.ga.workspace_service.model;
 
-import com.ga.waslah.model.AuditableEntity;
-import com.ga.waslah.model.StudySpace;
-import com.ga.waslah.model.User;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -36,10 +34,9 @@ public class Booking extends AuditableEntity {
 
     private LocalDateTime updatedAt;
 
-    @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
-    @ToString.Exclude
-    private User user;
+    // Booking owner's user id. Users live in identity-service, so there is no JPA link.
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @ManyToOne
     @JoinColumn(name = "study_space_id", nullable = false)

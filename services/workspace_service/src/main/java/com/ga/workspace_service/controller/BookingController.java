@@ -1,12 +1,13 @@
 
 package com.ga.workspace_service.controller;
 
-import com.ga.waslah.dto.BookingRequest;
-import com.ga.waslah.dto.BookingResponse;
-import com.ga.waslah.dto.PageResponse;
-import com.ga.waslah.model.BookingStatus;
-import com.ga.waslah.service.BookingService;
-import com.ga.waslah.service.NotificationService;
+import com.ga.workspace_service.dto.BookingRequest;
+import com.ga.workspace_service.dto.BookingResponse;
+import com.ga.workspace_service.dto.PageResponse;
+import com.ga.workspace_service.model.BookingStatus;
+import com.ga.workspace_service.service.BookingService;
+import com.ga.workspace_service.service.NotificationService;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;

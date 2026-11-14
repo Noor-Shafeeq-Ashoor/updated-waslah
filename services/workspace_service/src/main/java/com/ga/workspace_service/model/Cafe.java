@@ -1,8 +1,6 @@
 package com.ga.workspace_service.model;
 
-import com.ga.waslah.model.AuditableEntity;
-import com.ga.waslah.model.StudySpace;
-import com.ga.waslah.model.User;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -33,11 +31,9 @@ public class Cafe extends AuditableEntity {
     @Column(nullable = false)
     private Boolean active = true;
 
-    // Each cafe is managed by one Cafe Manager.
-    @ManyToOne
-    @JoinColumn(name = "manager_id", nullable = false)
-    @ToString.Exclude
-    private User manager;
+    // Cafe manager's user id. Users live in identity-service, so there is no JPA link.
+    @Column(name = "manager_id", nullable = false)
+    private Long managerUserId;
 
     @OneToMany(
             mappedBy = "cafe",
