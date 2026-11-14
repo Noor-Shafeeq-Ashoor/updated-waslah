@@ -1,7 +1,6 @@
 package com.ga.career_service.model;
 
-import com.ga.career_service.model.Job;
-import com.ga.career_service.model.User;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -32,9 +31,9 @@ public class JobApplication extends AuditableEntity {
     @JoinColumn(name = "job_id", nullable = false)
     private Job job;
 
-    @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    // Applicant's user id. Users live in identity-service, so there is no JPA link.
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
