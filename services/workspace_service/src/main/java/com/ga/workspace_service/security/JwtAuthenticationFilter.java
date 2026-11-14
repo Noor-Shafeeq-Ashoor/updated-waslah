@@ -1,6 +1,6 @@
 package com.ga.workspace_service.security;
 
-import com.ga.career_service.model.Role;
+import com.ga.workspace_service.model.Role;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
