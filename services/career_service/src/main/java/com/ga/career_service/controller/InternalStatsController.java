@@ -1,5 +1,7 @@
 package com.ga.career_service.controller;
 
+import com.ga.career_service.model.JobStatus;
+import com.ga.career_service.repository.JobRepository;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
