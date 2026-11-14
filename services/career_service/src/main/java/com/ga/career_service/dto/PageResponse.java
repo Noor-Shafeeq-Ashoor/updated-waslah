@@ -1,4 +1,3 @@
-
 package com.ga.career_service.dto;
 
 import java.util.List;

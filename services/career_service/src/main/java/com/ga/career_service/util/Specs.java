@@ -1,4 +1,3 @@
-
 package com.ga.career_service.util;
 
 import jakarta.persistence.criteria.Expression;
