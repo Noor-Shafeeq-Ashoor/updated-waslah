@@ -1,7 +1,7 @@
 package com.ga.workspace_service.dto;
 
-import com.ga.waslah.model.SessionEvent;
-import com.ga.waslah.model.SessionEventType;
+import com.ga.workspace_service.model.SessionEvent;
+import com.ga.workspace_service.model.SessionEventType;
 
 import java.time.LocalDateTime;
 
@@ -13,10 +13,10 @@ public record SessionEventResponse(
         String details,
         LocalDateTime occurredAt
 ) {
-    public static SessionEventResponse from(SessionEvent e) {
+    public static SessionEventResponse from(SessionEvent e, String username) {
         return new SessionEventResponse(
                 e.getId(), e.getEventType(),
-                e.getUser() == null ? null : e.getUser().getUsername(),
+                username,
                 e.getDetails(), e.getOccurredAt());
     }
 }

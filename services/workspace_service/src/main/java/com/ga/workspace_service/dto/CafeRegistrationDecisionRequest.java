@@ -1,6 +1,6 @@
 package com.ga.workspace_service.dto;
 
-import com.ga.waslah.model.CafeRequestStatus;
+import com.ga.workspace_service.model.CafeRequestStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;

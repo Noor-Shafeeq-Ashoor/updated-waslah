@@ -1,6 +1,6 @@
 package com.ga.workspace_service.dto;
 
-import com.ga.waslah.model.CafeRequestStatus;
+import com.ga.workspace_service.model.CafeRequestStatus;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

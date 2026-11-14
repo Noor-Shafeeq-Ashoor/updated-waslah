@@ -1,7 +1,7 @@
 
 package com.ga.workspace_service.dto;
 
-import com.ga.waslah.model.StudySessionStatus;
+import com.ga.workspace_service.model.StudySessionStatus;
 
 import java.time.LocalDateTime;
 

@@ -1,10 +1,10 @@
 
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.model.*;
-import com.ga.waslah.repository.BookingRepository;
-import com.ga.waslah.repository.SessionWaitlistRepository;
-import com.ga.waslah.repository.StudySessionRepository;
+import com.ga.workspace_service.model.*;
+import com.ga.workspace_service.repository.BookingRepository;
+import com.ga.workspace_service.repository.SessionWaitlistRepository;
+import com.ga.workspace_service.repository.StudySessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -42,14 +42,8 @@ public class BookingCompletionScheduler {
     @Transactional
     public void completeExpiredBookings() {
 
-        // Acquire the same lock used by booking and
-        // study-session writes, before reading the records.
         participationLockService.lockStudySessionWrites();
-
         LocalDateTime now = LocalDateTime.now();
-
-        // PENDING bookings that nobody answered before their time ended would
-        // otherwise block the slot forever and could still be confirmed late.
         List<Booking> expiredPending =
                 bookingRepository.findByStatusAndEndTimeLessThan(
                         BookingStatus.PENDING,

@@ -1,6 +1,6 @@
 package com.ga.workspace_service.dto;
 
-import com.ga.waslah.model.BookingStatus;
+import com.ga.workspace_service.model.BookingStatus;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
