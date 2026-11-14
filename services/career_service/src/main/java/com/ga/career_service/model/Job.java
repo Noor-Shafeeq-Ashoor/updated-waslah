@@ -1,9 +1,7 @@
 package com.ga.career_service.model;
 
-import com.ga.career_service.model.AuditableEntity;
-import com.ga.career_service.model.JobStatus;
-import com.ga.career_service.model.JobType;
-import com.ga.career_service.model.User;
+
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -61,9 +59,9 @@ public class Job extends AuditableEntity {
 
     private LocalDateTime updatedAt;
 
-    @ManyToOne
-    @JoinColumn(name = "created_by", nullable = false)
-    private User createdBy;
+    // Employer's user id. Users live in identity-service, so there is no JPA link.
+    @Column(name = "created_by", nullable = false)
+    private Long createdByUserId;
 
     @PrePersist
     protected void onCreate() {
