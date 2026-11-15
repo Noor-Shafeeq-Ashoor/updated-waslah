@@ -1,17 +1,18 @@
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.dto.CafeRegistrationDecisionRequest;
-import com.ga.waslah.dto.CafeRegistrationRequest;
-import com.ga.waslah.dto.CafeRegistrationResponse;
-import com.ga.waslah.exception.ForbiddenException;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.Cafe;
-import com.ga.waslah.model.CafeRequestStatus;
-import com.ga.waslah.model.Role;
-import com.ga.waslah.model.User;
-import com.ga.waslah.repository.CafeRegistrationRequestRepository;
-import com.ga.waslah.repository.CafeRepository;
-import com.ga.waslah.repository.UserRepository;
+import com.ga.workspace_service.dto.CafeRegistrationDecisionRequest;
+import com.ga.workspace_service.dto.CafeRegistrationRequest;
+import com.ga.workspace_service.dto.CafeRegistrationResponse;
+import com.ga.workspace_service.exception.ForbiddenException;
+import com.ga.workspace_service.exception.ResourceNotFoundException;
+import com.ga.workspace_service.model.Cafe;
+import com.ga.workspace_service.model.CafeRequestStatus;
+import com.ga.workspace_service.model.Role;
+import com.ga.workspace_service.repository.CafeRegistrationRequestRepository;
+import com.ga.workspace_service.repository.CafeRepository;
+
+import com.ga.workspace_service.security.CurrentUser;
+import com.ga.workspace_service.security.JwtPrincipal;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -21,18 +22,21 @@ public class CafeRegistrationService {
 
     private final CafeRegistrationRequestRepository requestRepository;
     private final CafeRepository cafeRepository;
-    private final UserRepository userRepository;
+    private final CurrentUser currentUser;
+    private final IdentityClient identityClient;
     private final AuditService auditService;
 
     public CafeRegistrationService(
             CafeRegistrationRequestRepository requestRepository,
             CafeRepository cafeRepository,
-            UserRepository userRepository,
+            CurrentUser currentUser,
+            IdentityClient identityClient,
             AuditService auditService
     ) {
         this.requestRepository = requestRepository;
         this.cafeRepository = cafeRepository;
-        this.userRepository = userRepository;
+        this.currentUser = currentUser;
+        this.identityClient = identityClient;
         this.auditService = auditService;
     }
 
@@ -45,20 +49,20 @@ public class CafeRegistrationService {
             CafeRegistrationRequest request
     ) {
 
-        User user = getUser(username);
+        JwtPrincipal user = getUser(username);
 
         /*
          * Only normal users can submit a cafe registration request.
          * Existing Cafe Managers do not need to request approval again.
          */
-        if (user.getRole() != Role.USER) {
+        if (user.role() != Role.USER) {
             throw new ForbiddenException(
                     "Only users can submit cafe registration requests"
             );
         }
 
-        com.ga.waslah.model.CafeRegistrationRequest registrationRequest =
-                new com.ga.waslah.model.CafeRegistrationRequest();
+        com.ga.workspace_service.model.CafeRegistrationRequest registrationRequest =
+                new com.ga.workspace_service.model.CafeRegistrationRequest();
 
         registrationRequest.setCafeName(request.getCafeName());
         registrationRequest.setDescription(request.getDescription());
@@ -68,7 +72,7 @@ public class CafeRegistrationService {
         registrationRequest.setStatus(CafeRequestStatus.PENDING);
 
         // The authenticated user becomes the requester.
-        registrationRequest.setRequestedBy(user);
+        registrationRequest.setRequestedByUserId(user.id());
 
         var savedRequest = requestRepository.save(registrationRequest);
 
@@ -90,9 +94,9 @@ public class CafeRegistrationService {
             String username
     ) {
 
-        User user = getUser(username);
+        JwtPrincipal user = getUser(username);
 
-        return requestRepository.findByRequestedBy(user)
+        return requestRepository.findByRequestedByUserId(user.id())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -106,7 +110,7 @@ public class CafeRegistrationService {
             String username
     ) {
 
-        User admin = getUser(username);
+        JwtPrincipal admin = getUser(username);
 
         checkAdmin(admin);
 
@@ -129,7 +133,7 @@ public class CafeRegistrationService {
 
         checkAdmin(getUser(username));
 
-        List<com.ga.waslah.model.CafeRegistrationRequest> requests =
+        List<com.ga.workspace_service.model.CafeRegistrationRequest> requests =
                 status == null
                         ? requestRepository.findAll()
                         : requestRepository.findByStatus(status);
@@ -147,11 +151,11 @@ public class CafeRegistrationService {
             CafeRegistrationDecisionRequest decisionRequest
     ) {
 
-        User admin = getUser(username);
+        JwtPrincipal admin = getUser(username);
 
         checkAdmin(admin);
 
-        com.ga.waslah.model.CafeRegistrationRequest registrationRequest =
+        com.ga.workspace_service.model.CafeRegistrationRequest registrationRequest =
                 requestRepository.findById(requestId)
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
@@ -208,12 +212,7 @@ public class CafeRegistrationService {
                 CafeRequestStatus.APPROVED
         );
 
-        User manager = registrationRequest.getRequestedBy();
-
-        // Promote the user to Cafe Manager.
-        manager.setRole(Role.CAFE_MANAGER);
-
-        userRepository.save(manager);
+        Long managerUserId = registrationRequest.getRequestedByUserId();
 
         // Create the actual Cafe after approval.
         Cafe cafe = new Cafe();
@@ -224,7 +223,7 @@ public class CafeRegistrationService {
 
         cafe.setActive(true);
 
-        cafe.setManager(manager);
+        cafe.setManagerUserId(managerUserId);
 
         cafeRepository.save(cafe);
 
@@ -244,18 +243,13 @@ public class CafeRegistrationService {
     // HELPER METHODS
     // =========================
 
-    private User getUser(String username) {
-
-        return userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "User not found"
-                        ));
+    private JwtPrincipal getUser(String username) {
+        return currentUser.get();
     }
 
-    private void checkAdmin(User user) {
+    private void checkAdmin(JwtPrincipal user) {
 
-        if (user.getRole() != Role.ADMIN) {
+        if (user.role() != Role.ADMIN) {
 
             throw new ForbiddenException(
                     "Only administrators can manage cafe registration requests"
@@ -264,7 +258,7 @@ public class CafeRegistrationService {
     }
 
     private CafeRegistrationResponse toResponse(
-            com.ga.waslah.model.CafeRegistrationRequest request
+            com.ga.workspace_service.model.CafeRegistrationRequest request
     ) {
 
         return new CafeRegistrationResponse(
@@ -273,7 +267,7 @@ public class CafeRegistrationService {
                 request.getDescription(),
                 request.getLocation(),
                 request.getStatus(),
-                request.getRequestedBy().getUsername(),
+                identityClient.username(request.getRequestedByUserId()),
                 request.getCreatedAt()
         );
     }
