@@ -1,10 +1,11 @@
 
 package com.ga.workspace_service.controller;
 
-import com.ga.waslah.dto.CreateStudySessionRequest;
-import com.ga.waslah.dto.JoinSessionResponse;
-import com.ga.waslah.dto.StudySessionResponse;
-import com.ga.waslah.service.StudySessionService;
+import com.ga.workspace_service.dto.CreateStudySessionRequest;
+import com.ga.workspace_service.dto.JoinSessionResponse;
+import com.ga.workspace_service.dto.StudySessionResponse;
+import com.ga.workspace_service.service.StudySessionService;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -18,6 +19,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+
+import static org.springframework.http.ResponseEntity.ok;
 
 /**
  * REST controller for managing group study sessions.
@@ -87,7 +90,7 @@ public class StudySessionController {
                 authentication.getName()
         );
 
-        return ResponseEntity.ok(response);
+        return ok(response);
     }
 
 
@@ -129,7 +132,7 @@ public class StudySessionController {
             @ApiResponse(responseCode = "404", description = "Session not found")
     })
     @GetMapping("/{id}/events")
-    public ResponseEntity<List<com.ga.waslah.dto.SessionEventResponse>> getSessionEvents(
+    public ResponseEntity<List<com.ga.workspace_service.dto.SessionEventResponse>> getSessionEvents(
             @PathVariable Long id,
             Authentication authentication
     ) {
@@ -143,7 +146,7 @@ public class StudySessionController {
     )
     @GetMapping
     public ResponseEntity<List<StudySessionResponse>> listSessions() {
-        return ResponseEntity.ok(studySessionService.listSessions());
+        return ok(studySessionService.listSessions());
     }
 
 }
