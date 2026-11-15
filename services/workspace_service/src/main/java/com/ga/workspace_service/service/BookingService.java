@@ -1,16 +1,20 @@
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.dto.BookingRequest;
-import com.ga.waslah.dto.BookingResponse;
-import com.ga.waslah.dto.PageResponse;
-import com.ga.waslah.event.BookingCreatedEvent;
-import com.ga.waslah.exception.ConflictException;
-import com.ga.waslah.exception.ForbiddenException;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.*;
-import com.ga.waslah.repository.*;
-import com.ga.waslah.util.PagingUtil;
-import com.ga.waslah.util.Specs;
+import com.ga.workspace_service.dto.*;
+
+import com.ga.workspace_service.event.BookingCreatedEvent;
+
+import com.ga.workspace_service.exception.*;
+
+import com.ga.workspace_service.model.*;
+
+import com.ga.workspace_service.repository.*;
+
+import com.ga.workspace_service.security.CurrentUser;
+import com.ga.workspace_service.security.JwtPrincipal;
+import com.ga.workspace_service.util.*;
+
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -30,7 +34,8 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final StudySpaceRepository studySpaceRepository;
-    private final UserRepository userRepository;
+    private final CurrentUser currentUser;
+    private final IdentityClient identityClient;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final StudySessionRepository studySessionRepository;
@@ -42,7 +47,8 @@ public class BookingService {
     public BookingService(
             BookingRepository bookingRepository,
             StudySpaceRepository studySpaceRepository,
-            UserRepository userRepository,
+            CurrentUser currentUser,
+            IdentityClient identityClient,
             AuditService auditService,
             ApplicationEventPublisher eventPublisher,
             StudySessionRepository studySessionRepository,
@@ -54,7 +60,8 @@ public class BookingService {
     ) {
         this.bookingRepository = bookingRepository;
         this.studySpaceRepository = studySpaceRepository;
-        this.userRepository = userRepository;
+        this.currentUser = currentUser;
+        this.identityClient = identityClient;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.studySessionRepository = studySessionRepository;
@@ -143,7 +150,7 @@ public class BookingService {
 
         // Restrict every result to the authenticated user's bookings.
         Specification<Booking> specification =
-                Specs.<Booking>equal(username, "user.username")
+                Specs.<Booking>equal(currentUser.get().id(), "userId")
                         .and(Specs.equal(status, "status"))
                         .and(Specs.equal(studySpaceId, "studySpace.id"))
                         .and(Specs.atLeast(from, "startTime"))
@@ -195,9 +202,7 @@ public class BookingService {
         // Acquire the shared lock before taking any booking or study-space row locks.
         participationLockService.lockStudySessionWrites();
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("User not found"));
+        JwtPrincipal user = currentUser.get();
 
         StudySpace studySpace = studySpaceRepository
                 .findByIdForUpdate(request.getStudySpaceId())
@@ -245,7 +250,7 @@ public class BookingService {
 
 
         Booking booking = new Booking();
-        booking.setUser(user);
+        booking.setUserId(user.id());
         booking.setStudySpace(studySpace);
         booking.setStartTime(request.getStartTime());
         booking.setEndTime(request.getEndTime());
@@ -255,11 +260,10 @@ public class BookingService {
         eventPublisher.publishEvent(
                 new BookingCreatedEvent(
                         savedBooking.getId(),
-                        savedBooking.getUser().getUsername(),
+                        savedBooking.getUserId(),
                         savedBooking.getStudySpace()
                                 .getCafe()
-                                .getManager()
-                                .getUsername()
+                                .getManagerUserId()
                 )
         );
 
@@ -282,7 +286,7 @@ public class BookingService {
     public List<BookingResponse> getMyBookings(String username) {
 
         List<BookingResponse> bookings = bookingRepository
-                .findByUser_Username(username)
+                .findByUserId(currentUser.get().id())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -379,9 +383,7 @@ public class BookingService {
             String username
     ) {
 
-        if (!booking.getUser()
-                .getUsername()
-                .equals(username)) {
+        if (!booking.getUserId().equals(currentUser.get().id())) {
 
             log.warn("Booking access denied: ownership check failed");
 
@@ -395,13 +397,13 @@ public class BookingService {
 
         return new BookingResponse(
                 booking.getId(),
-                booking.getUser().getUsername(),
+                identityClient.username(booking.getUserId()),
                 booking.getStudySpace().getCafe().getName(),
                 booking.getStudySpace().getName(),
                 booking.getStartTime(),
                 booking.getEndTime(),
                 booking.getStatus(),
-                 booking.getCreatedAt(),
+                booking.getCreatedAt(),
                 booking.getStudySpace().getId(),
                 booking.getStudySpace().getCapacity()
         );
@@ -427,12 +429,11 @@ public class BookingService {
                 );
 
         // Check that the authenticated user manages this cafe.
-        String assignedManager = booking.getStudySpace()
+        Long assignedManager = booking.getStudySpace()
                 .getCafe()
-                .getManager()
-                .getUsername();
+                .getManagerUserId();
 
-        if (!assignedManager.equals(managerUsername)) {
+        if (!assignedManager.equals(currentUser.get().id())) {
             throw new ForbiddenException(
                     "You are not allowed to confirm this booking"
             );
@@ -489,12 +490,11 @@ public class BookingService {
                         new ResourceNotFoundException("Booking not found")
                 );
 
-        String assignedManager = booking.getStudySpace()
+        Long assignedManager = booking.getStudySpace()
                 .getCafe()
-                .getManager()
-                .getUsername();
+                .getManagerUserId();
 
-        if (!assignedManager.equals(managerUsername)) {
+        if (!assignedManager.equals(currentUser.get().id())) {
             throw new ForbiddenException(
                     "You are not allowed to manage this booking"
             );
@@ -546,16 +546,17 @@ public class BookingService {
                 return;
             }
 
-            List<String> affected = new ArrayList<>();
+            List<Long> affected = new ArrayList<>();
             for (SessionParticipant participant
                     : sessionParticipantRepository.findBySession_Id(session.getId())) {
-                affected.add(participant.getUser().getUsername());
+                affected.add(participant.getUserId());
             }
             for (SessionWaitlist waiting
                     : sessionWaitlistRepository.findBySession_IdOrderByPositionAsc(session.getId())) {
-                affected.add(waiting.getUser().getUsername());
+                affected.add(waiting.getUserId());
             }
-            affected.remove(actor);
+            Long actorId = currentUser.get().id();
+            affected.removeIf(actorId::equals);
 
             // No one can be promoted into a cancelled session.
             sessionWaitlistRepository.deleteBySession_Id(session.getId());
