@@ -10,7 +10,7 @@ import java.util.List;
 public record SessionActivityEvent(
         Long sessionId,
         String type,
-        List<String> recipients,
+        List<Long> recipientUserIds,
         String message
 ) {
 }
