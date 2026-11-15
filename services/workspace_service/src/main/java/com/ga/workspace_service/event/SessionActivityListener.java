@@ -1,7 +1,7 @@
 package com.ga.workspace_service.event;
 
-import com.ga.waslah.service.NotificationService;
-import com.ga.waslah.service.StoredNotificationService;
+
+import com.ga.workspace_service.service.NotificationPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -19,7 +19,7 @@ import java.util.concurrent.Executor;
  * are chained with {@link CompletableFuture}: a failure in one is logged and
  * does not stop the other, and nothing here can fail or slow down the request
  * that triggered the change.</p>
- *
+
  * <p>The tasks never wait on each other or on the pool, so even a small pool
  * cannot deadlock.</p>
  */
@@ -27,17 +27,14 @@ import java.util.concurrent.Executor;
 @Slf4j
 public class SessionActivityListener {
 
-    private final StoredNotificationService storedNotificationService;
-    private final NotificationService notificationService;
+    private final NotificationPublisher notificationPublisher;
     private final Executor executor;
 
     public SessionActivityListener(
-            StoredNotificationService storedNotificationService,
-            NotificationService notificationService,
+            NotificationPublisher notificationPublisher,
             @Qualifier("notificationExecutor") Executor executor
     ) {
-        this.storedNotificationService = storedNotificationService;
-        this.notificationService = notificationService;
+        this.notificationPublisher = notificationPublisher;
         this.executor = executor;
     }
 
@@ -53,37 +50,17 @@ public class SessionActivityListener {
     }
 
     /**
-     * Starts both delivery tasks and returns a future that completes when both
-     * have finished (successfully or not). Public so tests can wait for it.
+     * Public so tests can wait for it. Completes normally even if publishing fails.
      */
     public CompletableFuture<Void> dispatch(SessionActivityEvent event) {
-        long startedAt = System.nanoTime();
-        log.info("Session notification {} started: session={}, recipients={}",
-                event.type(), event.sessionId(), event.recipients().size());
-
-        CompletableFuture<Void> persist = CompletableFuture
-                .runAsync(() -> storedNotificationService.saveForUsers(
-                        event.recipients(), event.type(), event.message(),
+        return CompletableFuture
+                .runAsync(() -> notificationPublisher.publish(
+                        event.type(), event.recipientUserIds(), event.message(),
                         "STUDY_SESSION", event.sessionId()), executor)
                 .exceptionally(error -> {
-                    log.error("Saving notification {} for session {} failed: {}",
+                    log.error("Publishing notification {} for session {} failed: {}",
                             event.type(), event.sessionId(), error.toString());
                     return null;
                 });
-
-        CompletableFuture<Void> push = CompletableFuture
-                .runAsync(() -> event.recipients().forEach(username ->
-                        notificationService.sendToUser(
-                                username, event.type(), event.message())), executor)
-                .exceptionally(error -> {
-                    log.error("Pushing notification {} for session {} failed: {}",
-                            event.type(), event.sessionId(), error.toString());
-                    return null;
-                });
-
-        return CompletableFuture.allOf(persist, push).whenComplete((ignored, error) ->
-                log.info("Session notification {} finished: session={}, took {} ms",
-                        event.type(), event.sessionId(),
-                        (System.nanoTime() - startedAt) / 1_000_000));
     }
 }
