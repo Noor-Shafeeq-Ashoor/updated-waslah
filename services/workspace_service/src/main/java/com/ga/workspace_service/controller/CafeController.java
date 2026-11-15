@@ -1,22 +1,25 @@
 
 package com.ga.workspace_service.controller;
 
-import com.ga.waslah.dto.CafeRequest;
-import com.ga.waslah.dto.CafeResponse;
-import com.ga.waslah.dto.PageResponse;
-import com.ga.waslah.service.CafeService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import com.ga.workspace_service.dto.CafeRequest;
+import com.ga.workspace_service.dto.CafeResponse;
+import com.ga.workspace_service.dto.PageResponse;
+import com.ga.workspace_service.service.CafeService;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @Tag(name = "Cafés", description = "Browse cafés; café managers create and manage their own.")
 @RestController
 @RequestMapping("/api/cafes")
