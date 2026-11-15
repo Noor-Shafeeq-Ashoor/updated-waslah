@@ -16,7 +16,7 @@ public interface SessionParticipantRepository
 
     long countBySession_Id(Long sessionId);
 
-    boolean existsBySession_IdAndUser_Id(
+    boolean existsBySession_IdAndUserId(
             Long sessionId,
             Long userId
     );
@@ -25,7 +25,7 @@ public interface SessionParticipantRepository
     FROM SessionParticipant p
     JOIN p.session s
     JOIN s.booking b
-    WHERE p.user.id = :userId
+    WHERE p.userId = :userId
       AND s.status IN :statuses
       AND b.startTime < :endTime
       AND b.endTime > :startTime
@@ -38,7 +38,7 @@ public interface SessionParticipantRepository
     );
     List<SessionParticipant> findBySession_Id(Long sessionId);
 
-    Optional<SessionParticipant> findBySession_IdAndUser_Id(
+    Optional<SessionParticipant> findBySession_IdAndUserId(
             Long sessionId,
             Long userId
     );
