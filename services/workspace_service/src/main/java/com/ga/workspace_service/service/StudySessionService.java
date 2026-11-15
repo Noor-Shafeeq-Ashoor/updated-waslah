@@ -1,14 +1,16 @@
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.dto.CreateStudySessionRequest;
-import com.ga.waslah.dto.JoinSessionResponse;
-import com.ga.waslah.dto.SessionEventResponse;
-import com.ga.waslah.dto.StudySessionResponse;
-import com.ga.waslah.exception.ConflictException;
-import com.ga.waslah.exception.ForbiddenException;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.*;
-import com.ga.waslah.repository.*;
+import com.ga.workspace_service.dto.CreateStudySessionRequest;
+import com.ga.workspace_service.dto.JoinSessionResponse;
+import com.ga.workspace_service.dto.SessionEventResponse;
+import com.ga.workspace_service.dto.StudySessionResponse;
+import com.ga.workspace_service.exception.ConflictException;
+import com.ga.workspace_service.exception.ForbiddenException;
+import com.ga.workspace_service.exception.ResourceNotFoundException;
+import com.ga.workspace_service.model.*;
+import com.ga.workspace_service.repository.*;
+import com.ga.workspace_service.security.CurrentUser;
+import com.ga.workspace_service.security.JwtPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
@@ -21,11 +23,9 @@ import java.util.List;
 
 /**
  * Manages study sessions and their waitlists.
-
  * All mutating methods acquire the SAME PostgreSQL transaction-level advisory lock before reading state
  * used for decisions. This provides a straightforward serial execution order for study-session writes across
  * application instances.
-
  */
 @Service
 @RequiredArgsConstructor
@@ -37,7 +37,8 @@ public class StudySessionService {
     private final StudySessionRepository studySessionRepository;
     private final BookingRepository bookingRepository;
     private final SessionParticipantRepository participantRepository;
-    private final UserRepository userRepository;
+    private final CurrentUser currentUser;
+    private final IdentityClient identityClient;
     private final SessionWaitlistRepository waitlistRepository;
     private final ParticipationLockService participationLockService;
     private final SessionActivityService sessionActivityService;
@@ -48,10 +49,10 @@ public class StudySessionService {
     public StudySessionResponse createSession(String username, CreateStudySessionRequest request) {
         participationLockService.lockStudySessionWrites();
 
-        User organizer = userRepository.findByUsername(username).orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        JwtPrincipal organizer = currentUser.get();
         Booking booking = bookingRepository.findById(request.bookingId()).orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
 
-        if (!booking.getUser().getId().equals(organizer.getId())) {
+        if (!booking.getUserId().equals(organizer.id())) {
             throw new ForbiddenException("You cannot create a session for another user's booking");
         }
         ensureBookingActive(booking);
@@ -65,7 +66,7 @@ public class StudySessionService {
         if (studySessionRepository.existsByBooking_Id(booking.getId())) {
             throw new ConflictException("This booking already has a study session");
         }
-        if (hasOverlappingParticipation(organizer, booking)) {
+        if (hasOverlappingParticipation(organizer.id(), booking)) {
             throw new ConflictException("You already participate in an overlapping study session");
         }
 
@@ -74,16 +75,16 @@ public class StudySessionService {
         session.setDescription(request.description());
         session.setCapacity(request.capacity());
         session.setBooking(booking);
-        session.setOrganizer(organizer);
+        session.setOrganizerUserId(organizer.id());
         session.setStatus(request.capacity() == 1 ? StudySessionStatus.FULL : StudySessionStatus.OPEN);
         StudySession saved = studySessionRepository.save(session);
 
         SessionParticipant firstParticipant = new SessionParticipant();
         firstParticipant.setSession(saved);
-        firstParticipant.setUser(organizer);
+        firstParticipant.setUserId(organizer.id());
         participantRepository.save(firstParticipant);
 
-        sessionActivityService.record(saved, organizer, SessionEventType.CREATED,
+        sessionActivityService.record(saved, organizer.id(), SessionEventType.CREATED,
                 "Session created with capacity " + saved.getCapacity());
 
         log.info("Created study session {} for organizer {}", saved.getId(), username);
@@ -98,16 +99,16 @@ public class StudySessionService {
     public JoinSessionResponse joinSession(Long sessionId, String username) {
         participationLockService.lockStudySessionWrites();
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        JwtPrincipal user = currentUser.get();
+
         StudySession session = studySessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Study session not found"));
         ensureSessionJoinable(session);
 
-        if (participantRepository.existsBySession_IdAndUser_Id(sessionId, user.getId())) {
+        if (participantRepository.existsBySession_IdAndUserId(sessionId, user.id())) {
             throw new ConflictException("You have already joined this study session");
         }
-        if (waitlistRepository.existsBySession_IdAndUser_Id(sessionId, user.getId())) {
+        if (waitlistRepository.existsBySession_IdAndUserId(sessionId, user.id())) {
             throw new ConflictException("You are already on this session's waitlist");
         }
 
@@ -115,14 +116,17 @@ public class StudySessionService {
         List<SessionWaitlist> waiting = waitlistRepository.findBySession_IdOrderByPositionAsc(sessionId);
 
         if (confirmed < session.getCapacity() && waiting.isEmpty()) {
-            if (hasOverlappingParticipation(user, session.getBooking())) {
+            if (hasOverlappingParticipation(user.id(), session.getBooking())) {
                 throw new ConflictException("You already participate in an overlapping study session");
             }
-            addParticipant(session, user);
+
+
+            addParticipant(session, user.id());
             updateCapacityStatus(session);
-            sessionActivityService.record(session, user, SessionEventType.JOINED,
+
+            sessionActivityService.record(session, user.id(), SessionEventType.JOINED,
                     "Joined; status now " + session.getStatus(),
-                    List.of(session.getOrganizer().getUsername()),
+                    List.of(session.getOrganizerUserId()),
                     username + " joined your study session \"" + session.getTitle() + "\"");
             log.info("User {} joined session {}", username, sessionId);
             return new JoinSessionResponse(sessionId, "JOINED",
@@ -136,12 +140,12 @@ public class StudySessionService {
                 .orElse(1);
         SessionWaitlist entry = new SessionWaitlist();
         entry.setSession(session);
-        entry.setUser(user);
+        entry.setUserId(user.id());
         entry.setPosition(nextPosition);
         waitlistRepository.save(entry);
-        sessionActivityService.record(session, user, SessionEventType.WAITLISTED,
+        sessionActivityService.record(session, user.id(), SessionEventType.WAITLISTED,
                 "Waitlist position " + nextPosition,
-                List.of(username),
+                List.of(user.id()),
                 "You are number " + nextPosition + " on the waiting list for \"" + session.getTitle() + "\"");
         log.info("User {} waitlisted for session {} at position {}", username, sessionId, nextPosition);
         return new JoinSessionResponse(sessionId, "WAITLISTED",
@@ -153,30 +157,29 @@ public class StudySessionService {
     public void leaveSession(Long sessionId, String username) {
         participationLockService.lockStudySessionWrites();
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        JwtPrincipal user = currentUser.get();
         StudySession session = studySessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Study session not found"));
         if (!ACTIVE_STATUSES.contains(session.getStatus())) {
             throw new ConflictException("Cannot leave an inactive study session");
         }
-        if (session.getOrganizer().getId().equals(user.getId())) {
+        if (session.getOrganizerUserId().equals(user.id())) {
             throw new ConflictException("The organizer cannot leave their own study session");
         }
         SessionParticipant participant = participantRepository
-                .findBySession_IdAndUser_Id(sessionId, user.getId())
+                .findBySession_IdAndUserId(sessionId, user.id())
                 .orElse(null);
 
         if (participant == null) {
             // Not a participant: a waitlisted user may leave the queue instead.
             SessionWaitlist waiting = waitlistRepository
-                    .findBySession_IdAndUser_Id(sessionId, user.getId())
+                    .findBySession_IdAndUserId(sessionId, user.id())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "You are not a participant or waitlisted in this session"));
             waitlistRepository.delete(waiting);
-            sessionActivityService.record(session, user, SessionEventType.LEFT_WAITLIST,
+            sessionActivityService.record(session, user.id(), SessionEventType.LEFT_WAITLIST,
                     "Left the waiting list from position " + waiting.getPosition(),
-                    List.of(username),
+                    List.of(user.id()),
                     "You have left the waiting list for \"" + session.getTitle() + "\"");
             log.info("User {} left the waitlist of session {}", username, sessionId);
             return;
@@ -185,9 +188,9 @@ public class StudySessionService {
         participantRepository.delete(participant);
         participantRepository.flush();
         session.setStatus(StudySessionStatus.OPEN);
-        sessionActivityService.record(session, user, SessionEventType.LEFT,
+        sessionActivityService.record(session, user.id(), SessionEventType.LEFT,
                 "Left the session",
-                List.of(session.getOrganizer().getUsername()),
+                List.of(session.getOrganizerUserId()),
                 username + " left your study session \"" + session.getTitle() + "\"");
         promoteEligibleWaiters(session);
         updateCapacityStatus(session);
@@ -219,8 +222,9 @@ public class StudySessionService {
             if (count >= session.getCapacity()) {
                 break;
             }
-            User candidate = entry.getUser();
-            if (participantRepository.existsBySession_IdAndUser_Id(session.getId(), candidate.getId())
+
+            Long candidate = entry.getUserId();
+            if (participantRepository.existsBySession_IdAndUserId(session.getId(), candidate)
                     || hasOverlappingParticipation(candidate, booking)) {
                 continue;
             }
@@ -228,10 +232,10 @@ public class StudySessionService {
             waitlistRepository.delete(entry);
             sessionActivityService.record(session, candidate, SessionEventType.PROMOTED,
                     "Promoted from waitlist position " + entry.getPosition(),
-                    List.of(candidate.getUsername()),
+                    List.of(candidate),
                     "A seat opened up: you have joined \"" + session.getTitle() + "\"");
             count++;
-            log.info("Promoted user {} in session {}", candidate.getUsername(), session.getId());
+            log.info("Promoted user {} in session {}", candidate, session.getId());
         }
         // Flush before a subsequent count query in the same transaction.
         participantRepository.flush();
@@ -239,22 +243,21 @@ public class StudySessionService {
         session.setStatus(count >= session.getCapacity() ? StudySessionStatus.FULL : StudySessionStatus.OPEN);
     }
 
-    /** Reconciles OPEN/FULL with the number of confirmed participants. */
-    private void updateCapacityStatus(StudySession session) {
+   private void updateCapacityStatus(StudySession session) {
         long count = participantRepository.countBySession_Id(session.getId());
         session.setStatus(count >= session.getCapacity() ? StudySessionStatus.FULL : StudySessionStatus.OPEN);
     }
 
-    private void addParticipant(StudySession session, User user) {
+    private void addParticipant(StudySession session, Long userId) {
         SessionParticipant participant = new SessionParticipant();
         participant.setSession(session);
-        participant.setUser(user);
+        participant.setUserId(userId);
         participantRepository.saveAndFlush(participant);
     }
 
-    private boolean hasOverlappingParticipation(User user, Booking booking) {
+    private boolean hasOverlappingParticipation(Long userId, Booking booking) {
         return participantRepository.existsOverlappingSession(
-                user.getId(), booking.getStartTime(), booking.getEndTime(), ACTIVE_STATUSES);
+                userId, booking.getStartTime(), booking.getEndTime(), ACTIVE_STATUSES);
     }
 
     private void ensureSessionJoinable(StudySession session) {
@@ -279,7 +282,7 @@ public class StudySessionService {
         return new StudySessionResponse(
                 session.getId(), session.getTitle(), session.getDescription(),
                 session.getCapacity(), session.getStatus(), booking.getId(),
-                booking.getStudySpace().getId(), session.getOrganizer().getUsername(),
+                booking.getStudySpace().getId(), identityClient.username(session.getOrganizerUserId()),
                 booking.getStartTime(), booking.getEndTime(),participantRepository.countBySession_Id(session.getId()),
                 waitlistRepository.countBySession_Id(session.getId()));
     }
@@ -290,15 +293,14 @@ public class StudySessionService {
      */
     @Transactional(readOnly = true)
     public List<SessionEventResponse> listEvents(Long sessionId, String username) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        JwtPrincipal user = currentUser.get();
         StudySession session = studySessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Study session not found"));
 
-        boolean allowed = user.getRole() == Role.ADMIN
-                || session.getOrganizer().getId().equals(user.getId())
-                || participantRepository.existsBySession_IdAndUser_Id(sessionId, user.getId())
-                || waitlistRepository.existsBySession_IdAndUser_Id(sessionId, user.getId());
+        boolean allowed = user.role() == Role.ADMIN
+                || session.getOrganizerUserId().equals(user.id())
+                || participantRepository.existsBySession_IdAndUserId(sessionId, user.id())
+                || waitlistRepository.existsBySession_IdAndUserId(sessionId, user.id());
 
         if (!allowed) {
             throw new ForbiddenException("You are not allowed to view this session's history");
@@ -306,7 +308,7 @@ public class StudySessionService {
 
         return sessionEventRepository.findBySession_IdOrderByIdAsc(sessionId)
                 .stream()
-                .map(SessionEventResponse::from)
+                .map(e -> SessionEventResponse.from(e, identityClient.username(e.getUserId())))
                 .toList();
     }
 
