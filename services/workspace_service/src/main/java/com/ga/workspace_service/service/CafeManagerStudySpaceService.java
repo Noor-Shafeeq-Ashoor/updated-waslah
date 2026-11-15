@@ -1,18 +1,24 @@
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.dto.CreateStudySpaceRequest;
-import com.ga.waslah.dto.StudySpaceResponse;
-import com.ga.waslah.dto.UpdateStudySpaceAvailabilityRequest;
-import com.ga.waslah.dto.UpdateStudySpaceRequest;
-import com.ga.waslah.exception.ConflictException;
-import com.ga.waslah.exception.ForbiddenException;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.Cafe;
-import com.ga.waslah.model.StudySessionStatus;
-import com.ga.waslah.model.StudySpace;
-import com.ga.waslah.repository.CafeRepository;
-import com.ga.waslah.repository.StudySessionRepository;
-import com.ga.waslah.repository.StudySpaceRepository;
+import com.ga.workspace_service.dto.CreateStudySpaceRequest;
+import com.ga.workspace_service.dto.StudySpaceResponse;
+import com.ga.workspace_service.dto.UpdateStudySpaceAvailabilityRequest;
+import com.ga.workspace_service.dto.UpdateStudySpaceRequest;
+import com.ga.workspace_service.exception.ConflictException;
+import com.ga.workspace_service.exception.ForbiddenException;
+import com.ga.workspace_service.exception.ResourceNotFoundException;
+import com.ga.workspace_service.model.Cafe;
+import com.ga.workspace_service.model.StudySessionStatus;
+import com.ga.workspace_service.model.StudySpace;
+import com.ga.workspace_service.repository.CafeRepository;
+import com.ga.workspace_service.repository.StudySessionRepository;
+import com.ga.workspace_service.repository.StudySpaceRepository;
+import com.ga.workspace_service.security.JwtPrincipal;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import java.util.Objects;
+
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,14 +36,7 @@ public class CafeManagerStudySpaceService {
     private final StudySessionRepository studySessionRepository;
     private final ParticipationLockService participationLockService;
 
-    /**
-     * Creates a study space in a café managed by the authenticated user.
-     *
-     * @param cafeId café identifier
-     * @param request validated study-space details
-     * @param username authenticated manager's username
-     * @return created study-space details
-     */
+
     @Transactional
     public StudySpaceResponse createStudySpace(
             Long cafeId,
@@ -188,7 +187,15 @@ public class CafeManagerStudySpaceService {
      */
     private void verifyOwnership(Cafe cafe, String username) {
 
-        if (!cafe.getManager().getUsername().equals(username)) {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null ||
+                !(authentication.getPrincipal() instanceof JwtPrincipal principal)) {
+            throw new ForbiddenException("Authentication required");
+        }
+
+        if (!Objects.equals(cafe.getManagerUserId(), principal.id())) {
             throw new ForbiddenException(
                     "You are not allowed to manage this cafe"
             );
