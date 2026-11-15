@@ -5,22 +5,32 @@ import com.ga.workspace_service.dto.BookingRequest;
 import com.ga.workspace_service.dto.BookingResponse;
 import com.ga.workspace_service.dto.PageResponse;
 import com.ga.workspace_service.model.BookingStatus;
+import com.ga.workspace_service.security.CurrentUser;
 import com.ga.workspace_service.service.BookingService;
-import com.ga.workspace_service.service.NotificationService;
+import com.ga.workspace_service.service.NotificationPublisher;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+
+import java.util.List;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
-
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import java.time.LocalDateTime;
 
 /** Handles HTTP requests related to bookings.*/
@@ -31,15 +41,9 @@ import java.time.LocalDateTime;
 public class BookingController {
 
     private final BookingService bookingService;
-    private final NotificationService notificationService;
+    private final NotificationPublisher notificationPublisher;
+    private final CurrentUser currentUser;
 
-    /**
-     * Creates a booking for the authenticated user.
-     * If booking creation fails, sends a real-time failure
-     * notification to the user who attempted the booking.
-     * The exception is rethrown so the application's normal
-     * error handling can process the failed request.
-     */
     @Operation(
             summary = "Create a booking",
             description = "Creates a PENDING booking. Rejected when end is not after start, the space is unavailable, or the slot overlaps a PENDING/CONFIRMED booking (the study space row is locked during the check to prevent double booking). Triggers a real-time notification and an audit-log entry."
@@ -70,11 +74,13 @@ public class BookingController {
                     .body(response);
 
         } catch (RuntimeException exception) {
-            notificationService.sendToUser(
-                    username,
+            notificationPublisher.publish(
                     "BOOKING_FAILED",
+                    List.of(currentUser.get().id()),
                     "Your booking could not be completed. "
-                            + "Please review the details and try again."
+                            + "Please review the details and try again.",
+                    "BOOKING",
+                    null
             );
 
             throw exception;
@@ -192,10 +198,12 @@ public class BookingController {
         BookingResponse response =
                 bookingService.cancelBooking(id, username);
 
-        notificationService.sendToUser(
-                username,
+        notificationPublisher.publish(
                 "BOOKING_CANCELLED",
-                "Your booking has been cancelled. Booking ID: " + id
+                List.of(currentUser.get().id()),
+                "Your booking has been cancelled. Booking ID: " + id,
+                "BOOKING",
+                id
         );
 
         return ResponseEntity.ok(response);
