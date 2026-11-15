@@ -1,18 +1,19 @@
 
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.dto.CafeRequest;
-import com.ga.waslah.dto.CafeResponse;
-import com.ga.waslah.dto.PageResponse;
-import com.ga.waslah.exception.ForbiddenException;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.Cafe;
-import com.ga.waslah.model.Role;
-import com.ga.waslah.model.User;
-import com.ga.waslah.repository.CafeRepository;
-import com.ga.waslah.repository.UserRepository;
-import com.ga.waslah.util.PagingUtil;
-import com.ga.waslah.util.Specs;
+import com.ga.workspace_service.dto.CafeRequest;
+import com.ga.workspace_service.dto.CafeResponse;
+import com.ga.workspace_service.dto.PageResponse;
+import com.ga.workspace_service.exception.ForbiddenException;
+import com.ga.workspace_service.exception.ResourceNotFoundException;
+import com.ga.workspace_service.model.Cafe;
+import com.ga.workspace_service.model.Role;
+import com.ga.workspace_service.repository.CafeRepository;
+import com.ga.workspace_service.security.CurrentUser;
+import com.ga.workspace_service.security.JwtPrincipal;
+import com.ga.workspace_service.util.PagingUtil;
+import com.ga.workspace_service.util.Specs;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -29,22 +30,20 @@ import java.util.Set;
 public class CafeService {
 
     private final CafeRepository cafeRepository;
-    private final UserRepository userRepository;
+    private final CurrentUser currentUser;
+    private final IdentityClient identityClient;
     private final AuditService auditService;
 
-    /**
-     * Creates the service with the repositories required for cafe operations.
-     *
-     * @param cafeRepository repository used to access cafe records
-     * @param userRepository repository used to retrieve users
-     */
+
     public CafeService(
             CafeRepository cafeRepository,
-            UserRepository userRepository,
+            CurrentUser currentUser,
+            IdentityClient identityClient,
             AuditService auditService
     ) {
         this.cafeRepository = cafeRepository;
-        this.userRepository = userRepository;
+        this.currentUser = currentUser;
+        this.identityClient = identityClient;
         this.auditService = auditService;
     }
 
@@ -59,7 +58,7 @@ public class CafeService {
             String username,
             CafeRequest request
     ) {
-        User manager = getUser(username);
+        JwtPrincipal manager = getUser(username);
 
         // Only cafe managers are allowed to create cafes.
         checkCafeManager(manager);
@@ -74,7 +73,7 @@ public class CafeService {
         cafe.setActive(true);
 
         // Assign the authenticated manager as the cafe owner.
-        cafe.setManager(manager);
+        cafe.setManagerUserId(manager.id());
 
         Cafe savedCafe = cafeRepository.save(cafe);
 
@@ -88,14 +87,7 @@ public class CafeService {
         return toResponse(savedCafe);
     }
 
-    /**
-     * Retrieves all active cafes without pagination.
-     *
-     * <p>This method is preserved for existing callers while the controller
-     * is being updated to use the paginated endpoint.</p>
-     *
-     * @return a list of active cafes
-     */
+
     public List<CafeResponse> getAllActiveCafes() {
         return cafeRepository.findAll()
                 .stream()
@@ -104,21 +96,7 @@ public class CafeService {
                 .toList();
     }
 
-    /**
-     * Retrieves active cafes using optional filters, pagination, and sorting.
-     *
-     * <p>Name and location filters perform case-insensitive partial matching.
-     * Only active cafes are returned to prevent inactive cafes from appearing
-     * in public search results.</p>
-     *
-     * @param name optional cafe name filter
-     * @param location optional cafe location filter
-     * @param page zero-based page number
-     * @param size number of records per page
-     * @param sort field used to sort the results
-     * @param direction sorting direction: asc or desc
-     * @return a page of cafe response DTOs with pagination metadata
-     */
+
     public PageResponse<CafeResponse> getActiveCafes(
             String name,
             String location,
@@ -186,31 +164,24 @@ public class CafeService {
      * @return cafes belonging to that manager
      */
     public List<CafeResponse> getManagerCafes(String username) {
-        User manager = getUser(username);
+        JwtPrincipal manager = getUser(username);
 
         // Only cafe managers can access their managed cafes.
         checkCafeManager(manager);
 
-        return cafeRepository.findByManager(manager)
+        return cafeRepository.findByManagerUserId(manager.id())
                 .stream()
                 .map(this::toResponse)
                 .toList();
     }
 
-    /**
-     * Updates a cafe managed by the specified user.
-     *
-     * @param id ID of the cafe to update
-     * @param username username of the authenticated manager
-     * @param request updated cafe details
-     * @return the updated cafe response
-     */
+
     public CafeResponse updateCafe(
             Long id,
             String username,
             CafeRequest request
     ) {
-        User manager = getUser(username);
+        JwtPrincipal manager = getUser(username);
 
         checkCafeManager(manager);
 
@@ -242,7 +213,7 @@ public class CafeService {
      * @param username username of the authenticated manager
      */
     public void deactivateCafe(Long id, String username) {
-        User manager = getUser(username);
+        JwtPrincipal manager = getUser(username);
 
         checkCafeManager(manager);
 
@@ -270,7 +241,7 @@ public class CafeService {
      * @param username username of the authenticated manager
      */
     public void activateCafe(Long id, String username) {
-        User manager = getUser(username);
+        JwtPrincipal manager = getUser(username);
 
         checkCafeManager(manager);
 
@@ -290,27 +261,11 @@ public class CafeService {
         );
     }
 
-    /**
-     * Finds a user by username.
-     *
-     * @param username username of the user
-     * @return the matching user
-     * @throws ResourceNotFoundException if the user does not exist
-     */
-    private User getUser(String username) {
-        return userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("User not found")
-                );
+
+    private JwtPrincipal getUser(String username)  {
+        return currentUser.get();
     }
 
-    /**
-     * Finds a cafe by ID.
-     *
-     * @param id ID of the cafe
-     * @return the matching cafe
-     * @throws ResourceNotFoundException if the cafe does not exist
-     */
     private Cafe getCafe(Long id) {
         return cafeRepository.findById(id)
                 .orElseThrow(() ->
@@ -318,30 +273,19 @@ public class CafeService {
                 );
     }
 
-    /**
-     * Ensures that a user has the cafe manager role.
-     *
-     * @param user user whose role must be checked
-     * @throws ForbiddenException if the user is not a cafe manager
-     */
-    private void checkCafeManager(User user) {
-        if (user.getRole() != Role.CAFE_MANAGER) {
+
+    private void checkCafeManager(JwtPrincipal user) {
+        if (user.role() != Role.CAFE_MANAGER) {
             throw new ForbiddenException(
                     "Only Cafe Managers can manage cafes"
             );
         }
     }
 
-    /**
-     * Ensures that the supplied manager owns the specified cafe.
-     *
-     * @param cafe cafe whose ownership must be checked
-     * @param manager user attempting to manage the cafe
-     * @throws ForbiddenException if the manager does not own the cafe
-     */
-    private void checkOwnership(Cafe cafe, User manager) {
-        if (cafe.getManager() == null
-                || !cafe.getManager().getId().equals(manager.getId())) {
+
+    private void checkOwnership(Cafe cafe, JwtPrincipal manager) {
+        if (cafe.getManagerUserId() == null
+                || !cafe.getManagerUserId().equals(manager.id())) {
             throw new ForbiddenException(
                     "You are not allowed to manage this cafe"
             );
@@ -361,7 +305,7 @@ public class CafeService {
                 cafe.getDescription(),
                 cafe.getLocation(),
                 cafe.getActive(),
-                cafe.getManager().getUsername()
+                identityClient.username(cafe.getManagerUserId())
         );
     }
 }
