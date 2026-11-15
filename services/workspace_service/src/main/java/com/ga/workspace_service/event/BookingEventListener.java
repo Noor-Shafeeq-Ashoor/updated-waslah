@@ -1,11 +1,16 @@
 package com.ga.workspace_service.event;
 
-import com.ga.waslah.service.NotificationService;
+
+import com.ga.workspace_service.service.NotificationPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Handles booking events asynchronously after the associated
@@ -15,51 +20,28 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class BookingEventListener {
 
-    private final NotificationService notificationService;
+    private final NotificationPublisher notificationPublisher;
 
-    public BookingEventListener(NotificationService notificationService) {
-        this.notificationService = notificationService;
+    public BookingEventListener(NotificationPublisher notificationPublisher) {
+        this.notificationPublisher = notificationPublisher;
     }
 
-    /**
-     * Sends booking notifications asynchronously to the booking owner
-     * and cafe manager after the booking transaction commits.
-     */
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-
     public void handleBookingCreated(BookingCreatedEvent event) {
-        log.info("BOOKING NOTIFICATION - Running on thread: {}",
-                Thread.currentThread().getName());
+        log.info("Processing booking notification for booking {} on thread {}",
+                event.bookingId(), Thread.currentThread().getName());
 
-        // Log the thread processing the notification.
-        log.info(
-                "Processing booking notification for booking {} on thread {}",
-                event.bookingId(),
-                Thread.currentThread().getName()
-        );
+        // Owner and manager, without a duplicate when they are the same person.
+        Set<Long> recipients = new LinkedHashSet<>();
+        recipients.add(event.bookingOwnerId());
+        recipients.add(event.cafeManagerId());
 
-        String message = "A new booking has been created. Booking ID: "
-                + event.bookingId();
-
-        // Notify the user who created the booking.
-        notificationService.sendToUser(
-                event.bookingOwner(),
+        notificationPublisher.publish(
                 "BOOKING_CREATED",
-                message
-        );
-
-        // Notify the cafe manager, avoiding duplicate notifications.
-        if (!event.cafeManager().equals(event.bookingOwner())) {
-            notificationService.sendToUser(
-                    event.cafeManager(),
-                    "BOOKING_CREATED",
-                    message
-            );
-        }
-
-        log.info(
-                "Finished processing notifications for booking {}",
+                List.copyOf(recipients),
+                "A new booking has been created. Booking ID: " + event.bookingId(),
+                "BOOKING",
                 event.bookingId()
         );
     }
