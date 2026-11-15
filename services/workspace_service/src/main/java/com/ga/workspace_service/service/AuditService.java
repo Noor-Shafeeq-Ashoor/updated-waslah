@@ -1,8 +1,8 @@
 
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.model.AuditLog;
-import com.ga.waslah.repository.AuditLogRepository;
+import com.ga.workspace_service.model.AuditLog;
+import com.ga.workspace_service.repository.AuditLogRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
