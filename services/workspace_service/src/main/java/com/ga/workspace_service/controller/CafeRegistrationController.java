@@ -1,9 +1,9 @@
 package com.ga.workspace_service.controller;
 
-import com.ga.waslah.dto.CafeRegistrationDecisionRequest;
-import com.ga.waslah.dto.CafeRegistrationRequest;
-import com.ga.waslah.dto.CafeRegistrationResponse;
-import com.ga.waslah.service.CafeRegistrationService;
+import com.ga.workspace_service.dto.CafeRegistrationDecisionRequest;
+import com.ga.workspace_service.dto.CafeRegistrationRequest;
+import com.ga.workspace_service.dto.CafeRegistrationResponse;
+import com.ga.workspace_service.service.CafeRegistrationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -120,7 +120,7 @@ public class CafeRegistrationController {
                 authentication.getName(),
                 "ALL".equalsIgnoreCase(status)
                         ? null
-                        : com.ga.waslah.model.CafeRequestStatus
+                        : com.ga.workspace_service.model.CafeRequestStatus
                         .valueOf(status.toUpperCase())
         );
     }

@@ -1,11 +1,7 @@
 package com.ga.workspace_service.controller;
 
-import com.ga.waslah.dto.BookingResponse;
-import com.ga.waslah.service.CafeManagerBookingService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import com.ga.workspace_service.dto.BookingResponse;
+import com.ga.workspace_service.service.CafeManagerBookingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -13,6 +9,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "Café Manager Bookings", description = "Café managers review bookings for their own cafés. CAFE_MANAGER role required.")
 @RestController
