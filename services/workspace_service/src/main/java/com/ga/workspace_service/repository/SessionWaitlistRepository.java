@@ -10,7 +10,7 @@ import java.util.Optional;
 public interface SessionWaitlistRepository
         extends JpaRepository<SessionWaitlist, Long> {
 
-    boolean existsBySession_IdAndUser_Id(
+    boolean existsBySession_IdAndUserId(
             Long sessionId,
             Long userId
     );
@@ -24,7 +24,7 @@ public interface SessionWaitlistRepository
             Long sessionId
     );
 
-    Optional<SessionWaitlist> findBySession_IdAndUser_Id(
+    Optional<SessionWaitlist> findBySession_IdAndUserId(
             Long sessionId,
             Long userId
     );
@@ -32,3 +32,4 @@ public interface SessionWaitlistRepository
     void deleteBySession_Id(Long sessionId);
     long countBySession_Id(Long sessionId);
 }
+
