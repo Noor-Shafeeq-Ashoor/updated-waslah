@@ -1,11 +1,11 @@
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.event.SessionActivityEvent;
-import com.ga.waslah.model.SessionEvent;
-import com.ga.waslah.model.SessionEventType;
-import com.ga.waslah.model.StudySession;
-import com.ga.waslah.model.User;
-import com.ga.waslah.repository.SessionEventRepository;
+import com.ga.workspace_service.event.SessionActivityEvent;
+import com.ga.workspace_service.model.SessionEvent;
+import com.ga.workspace_service.model.SessionEventType;
+import com.ga.workspace_service.model.StudySession;
+import com.ga.workspace_service.repository.SessionEventRepository;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -38,27 +38,27 @@ public class SessionActivityService {
     */
     public void record(
             StudySession session,
-            User user,
+            Long userId,
             SessionEventType type,
             String details,
-            Collection<String> recipients,
+            Collection<Long> recipientUserIds,
             String message
     ) {
         SessionEvent entry = new SessionEvent();
         entry.setSession(session);
-        entry.setUser(user);
+        entry.setUserId(userId);
         entry.setEventType(type);
         entry.setDetails(details);
         sessionEventRepository.save(entry);
 
         log.info("Session {} event {} (user={})", session.getId(), type,
-                user == null ? "system" : user.getUsername());
+                userId == null ? "system" : userId);
 
-        if (recipients == null || recipients.isEmpty()) {
+        if (recipientUserIds == null || recipientUserIds.isEmpty()) {
             return;
         }
 
-        List<String> distinct = recipients.stream()
+        List<Long> distinct = recipientUserIds.stream()
                 .filter(Objects::nonNull)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
                 .stream().toList();
@@ -70,8 +70,8 @@ public class SessionActivityService {
     }
 
     /** History only, no notification. */
-    public void record(StudySession session, User user,
+    public void record(StudySession session,  Long userId,
                        SessionEventType type, String details) {
-        record(session, user, type, details, List.of(), null);
+        record(session, userId, type, details, List.of(), null);
     }
 }
