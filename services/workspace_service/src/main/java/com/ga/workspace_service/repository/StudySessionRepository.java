@@ -14,7 +14,7 @@ public interface StudySessionRepository
         extends JpaRepository<StudySession, Long> {
     boolean existsByBooking_Id(Long bookingId);
 
-    long countByStatus(com.ga.waslah.model.StudySessionStatus status);
+    long countByStatus(com.ga.workspace_service.model.StudySessionStatus status);
     /**
     * Largest capacity among the active (OPEN/FULL) sessions held in a study
      * space, or null when there are none. Used to stop a manager from shrinking
@@ -27,7 +27,7 @@ public interface StudySessionRepository
             """)
     Integer findMaxCapacityOfSessionsInSpace(
             @Param("spaceId") Long spaceId,
-           @Param("statuses") java.util.Collection<com.ga.waslah.model.StudySessionStatus> statuses);
+           @Param("statuses") java.util.Collection<com.ga.workspace_service.model.StudySessionStatus> statuses);
 
 
     Optional<StudySession> findByBooking_Id(Long bookingId);
