@@ -1,9 +1,9 @@
 package com.ga.workspace_service.service;
 
-import com.ga.waslah.dto.BookingResponse;
-import com.ga.waslah.model.Booking;
-import com.ga.waslah.repository.BookingRepository;
-import com.ga.waslah.service.NotificationService;
+import com.ga.workspace_service.dto.BookingResponse;
+import com.ga.workspace_service.model.Booking;
+import com.ga.workspace_service.repository.BookingRepository;
+import com.ga.workspace_service.security.CurrentUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -15,7 +15,9 @@ public class CafeManagerBookingService {
 
     private final BookingRepository bookingRepository;
     private final BookingService bookingService;
-    private final NotificationService notificationService;
+    private final NotificationPublisher notificationPublisher;
+    private final CurrentUser currentUser;
+    private final IdentityClient identityClient;
 
     // =========================
     // GET MY CAFE BOOKINGS
@@ -24,7 +26,7 @@ public class CafeManagerBookingService {
     public List<BookingResponse> getMyCafeBookings(String username) {
 
         return bookingRepository
-                .findByStudySpace_Cafe_Manager_Username(username)
+                .findByStudySpace_Cafe_ManagerUserId(currentUser.get().id())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -50,12 +52,8 @@ public class CafeManagerBookingService {
                 username
         );
 
-        notificationService.sendToUser(
-                response.getUsername(),
-                "BOOKING_CONFIRMED",
-                "Your booking has been confirmed. Booking ID: "
-                        + response.getId()
-        );
+        notifyOwner(response, "BOOKING_CONFIRMED",
+                "Your booking has been confirmed. Booking ID: " + response.getId());
 
         return response;
     }
@@ -78,14 +76,18 @@ public class CafeManagerBookingService {
                 username
         );
 
-        notificationService.sendToUser(
-                response.getUsername(),
-                "BOOKING_REJECTED",
-                "Your booking was cancelled by the cafe. Booking ID: "
-                        + response.getId()
-        );
+        notifyOwner(response, "BOOKING_REJECTED",
+                "Your booking was cancelled by the cafe. Booking ID: " + response.getId());
 
         return response;
+    }
+
+    /** The response carries the owner's username only, so the owner's id is read from the booking. */
+    private void notifyOwner(BookingResponse response, String type, String message) {
+        bookingRepository.findById(response.getId())
+                .map(Booking::getUserId)
+                .ifPresent(ownerId -> notificationPublisher.publish(
+                        type, List.of(ownerId), message, "BOOKING", response.getId()));
     }
 
     // =========================
@@ -96,7 +98,7 @@ public class CafeManagerBookingService {
 
         return new BookingResponse(
                 booking.getId(),
-                booking.getUser().getUsername(),
+                identityClient.username(booking.getUserId()),
                 booking.getStudySpace().getCafe().getName(),
                 booking.getStudySpace().getName(),
                 booking.getStartTime(),
