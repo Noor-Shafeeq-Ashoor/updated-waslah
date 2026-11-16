@@ -1,0 +1,25 @@
+# Test profile: in-memory H2, tables created by Hibernate.
+spring:
+  datasource:
+    url: jdbc:h2:mem:waslah;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  kafka:
+    admin:
+      auto-create: false
+    listener:
+      auto-startup: false
+
+jwt:
+  secret: test-only-secret-key-that-is-at-least-32-chars-long
+
+internal:
+  token: test-internal-token
+
+logging:
+  level:
+    com.ga.waslah: WARN

@@ -1,0 +1,84 @@
+server:
+  port: ${PORT:8084}
+
+spring:
+  application:
+    name: notification-service
+
+  # Load environment variables for local development
+  config:
+    import:
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+      - optional:file:services/.env[.properties]
+
+  # ==========================================
+  # PostgreSQL - Shared WASLAH Database
+  # ==========================================
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/waslah}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+
+  # ==========================================
+  # Apache Kafka
+  # ==========================================
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+
+    producer:
+      acks: all
+
+# ==========================================
+# JWT Authentication
+# ==========================================
+jwt:
+  secret: ${JWT_SECRET}
+
+# ==========================================
+# Internal Service Authentication
+# ==========================================
+internal:
+  token: ${INTERNAL_TOKEN:}
+
+# ==========================================
+# Kafka Topics
+# ==========================================
+app:
+  kafka:
+    topics:
+      booking-events: booking-events
+      session-events: session-events
+
+# ==========================================
+# Spring Boot Actuator
+# ==========================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+# ==========================================
+# Logging
+# ==========================================
+logging:
+  level:
+    root: INFO
+    com.ga.notification_service: INFO
+    org.hibernate.SQL: WARN
