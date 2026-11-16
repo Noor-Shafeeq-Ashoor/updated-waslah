@@ -15,40 +15,28 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class NotificationService {
 
-    private final ConcurrentHashMap<String, Set<SseEmitter>> emitters =
+    private final ConcurrentHashMap<Long, Set<SseEmitter>> emitters =
             new ConcurrentHashMap<>();
 
-    /**
-     * Registers a new SSE connection for the specified user.
-     *
-     * @param username the username subscribing to notifications
-     * @return the SSE emitter used to send events to the user
-     */
-    public SseEmitter subscribe(String username) {
+
+    public SseEmitter subscribe(Long userId) {
         SseEmitter emitter = new SseEmitter(0L);
 
         emitters.computeIfAbsent(
-                username,
+                userId,
                 key -> ConcurrentHashMap.newKeySet()
         ).add(emitter);
 
-        emitter.onCompletion(() -> removeEmitter(username, emitter));
-        emitter.onTimeout(() -> removeEmitter(username, emitter));
-        emitter.onError(error -> removeEmitter(username, emitter));
+        emitter.onCompletion(() -> removeEmitter(userId, emitter));
+        emitter.onTimeout(() -> removeEmitter(userId, emitter));
+        emitter.onError(error -> removeEmitter(userId, emitter));
 
         return emitter;
     }
 
-    /**
-     * Sends a named SSE event to all active connections belonging
-     * to the specified user.
-     *
-     * @param username the intended recipient's username
-     * @param eventName the name of the event being sent
-     * @param data the event payload
-     */
-    public void sendToUser(String username, String eventName, Object data) {
-        Set<SseEmitter> userEmitters = emitters.get(username);
+
+    public void sendToUser(Long userId, String eventName, Object data) {
+        Set<SseEmitter> userEmitters = emitters.get(userId);
 
         if (userEmitters == null || userEmitters.isEmpty()) {
             return;
@@ -62,26 +50,21 @@ public class NotificationService {
                                 .data(data)
                 );
             } catch (IOException | IllegalStateException exception) {
-                removeEmitter(username, emitter);
+                removeEmitter(userId, emitter);
                 emitter.completeWithError(exception);
             }
         }
     }
 
-    /**
-     * Removes a completed, timed-out, or failed SSE connection.
-     *
-     * @param username the username associated with the connection
-     * @param emitter the connection to remove
-     */
-    private void removeEmitter(String username, SseEmitter emitter) {
-        Set<SseEmitter> userEmitters = emitters.get(username);
+
+    private void removeEmitter(Long userId, SseEmitter emitter) {
+        Set<SseEmitter> userEmitters = emitters.get(userId);
 
         if (userEmitters != null) {
             userEmitters.remove(emitter);
 
             if (userEmitters.isEmpty()) {
-                emitters.remove(username, userEmitters);
+                emitters.remove(userId, userEmitters);
             }
         }
     }
