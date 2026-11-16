@@ -1,12 +1,12 @@
 package com.ga.notification_service.service;
 
-import com.ga.waslah.dto.NotificationResponse;
-import com.ga.waslah.dto.PageResponse;
-import com.ga.waslah.exception.ResourceNotFoundException;
-import com.ga.waslah.model.Notification;
-import com.ga.waslah.repository.NotificationRepository;
-import com.ga.waslah.repository.UserRepository;
-import com.ga.waslah.util.PagingUtil;
+import com.ga.notification_service.dto.NotificationResponse;
+import com.ga.notification_service.dto.PageResponse;
+import com.ga.notification_service.exception.ResourceNotFoundException;
+import com.ga.notification_service.model.Notification;
+import com.ga.notification_service.repository.NotificationRepository;
+import com.ga.notification_service.util.PagingUtil;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -27,26 +27,24 @@ import java.util.Set;
 public class StoredNotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final UserRepository userRepository;
+
 
     /** Saves one notification per recipient. Unknown usernames are skipped. */
     @Transactional
     public int saveForUsers(
-            Collection<String> usernames,
+            Collection<Long> recipientUserIds,
             String type,
             String message,
             String referenceType,
             Long referenceId
     ) {
         int saved = 0;
-        for (String username : usernames) {
-            var user = userRepository.findByUsername(username).orElse(null);
-            if (user == null) {
-                log.warn("Notification {} skipped: recipient not found", type);
+        for (Long userId : recipientUserIds) {
+            if (userId == null) {
                 continue;
             }
             Notification notification = new Notification();
-            notification.setRecipient(user);
+            notification.setRecipientUserId(userId);
             notification.setType(type);
             notification.setMessage(message);
             notification.setReferenceType(referenceType);
@@ -59,15 +57,15 @@ public class StoredNotificationService {
 
     @Transactional(readOnly = true)
     public PageResponse<NotificationResponse> list(
-            String username, boolean unreadOnly, int page, int size) {
+            Long userId, boolean unreadOnly, int page, int size) {
 
         Pageable pageable = PagingUtil.createPageable(
                 page, size, "createdAt", "desc", "createdAt",
                 Set.of("createdAt"));
 
         Page<Notification> result = unreadOnly
-                ? notificationRepository.findByRecipient_UsernameAndReadFalse(username, pageable)
-                : notificationRepository.findByRecipient_Username(username, pageable);
+                ? notificationRepository.findByRecipientUserIdAndReadFalse(userId, pageable)
+                : notificationRepository.findByRecipientUserId(userId, pageable);
 
         return new PageResponse<>(
                 result.getContent().stream().map(NotificationResponse::from).toList(),
@@ -76,15 +74,16 @@ public class StoredNotificationService {
     }
 
     @Transactional(readOnly = true)
-    public long unreadCount(String username) {
-        return notificationRepository.countByRecipient_UsernameAndReadFalse(username);
+    public long unreadCount(Long userId) {
+        return notificationRepository.countByRecipientUserIdAndReadFalse(userId);
     }
+
 
     /** Marks one of the caller's own notifications as read (idempotent). */
     @Transactional
-    public NotificationResponse markRead(Long id, String username) {
+    public NotificationResponse markRead(Long id, Long userId) {
         Notification notification = notificationRepository
-                .findByIdAndRecipient_Username(id, username)
+                .findByIdAndRecipientUserId(id, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found"));
         notification.setRead(true);
         return NotificationResponse.from(notificationRepository.save(notification));
