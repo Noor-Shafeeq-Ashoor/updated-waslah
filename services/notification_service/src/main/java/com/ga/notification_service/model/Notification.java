@@ -1,6 +1,5 @@
 package com.ga.notification_service.model;
 
-import com.ga.waslah.model.User;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -26,10 +25,9 @@ public class Notification {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "recipient_id", nullable = false)
-    @ToString.Exclude
-    private User recipient;
+    // Recipient's user id. Users live in identity-service, so there is no JPA link.
+    @Column(name = "recipient_id", nullable = false)
+    private Long recipientUserId;
 
     // Same name as the SSE event, e.g. SESSION_PROMOTED.
     @Column(nullable = false, length = 50)
