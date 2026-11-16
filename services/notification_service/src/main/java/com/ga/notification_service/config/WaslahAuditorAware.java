@@ -1,7 +1,7 @@
 
 package com.ga.notification_service.config;
 
-import com.ga.workspace_service.security.JwtPrincipal;
+import com.ga.notification_service.security.JwtPrincipal;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;

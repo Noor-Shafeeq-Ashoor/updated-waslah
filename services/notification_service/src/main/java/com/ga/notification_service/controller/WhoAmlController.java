@@ -1,7 +1,7 @@
 package com.ga.notification_service.controller;
 
-import com.ga.workspace_service.security.CurrentUser;
-import com.ga.workspace_service.security.JwtPrincipal;
+import com.ga.notification_service.security.CurrentUser;
+import com.ga.notification_service.security.JwtPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;

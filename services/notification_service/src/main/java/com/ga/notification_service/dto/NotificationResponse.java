@@ -1,6 +1,6 @@
 package com.ga.notification_service.dto;
 
-import com.ga.waslah.model.Notification;
+import com.ga.notification_service.model.Notification;
 
 import java.time.LocalDateTime;
 

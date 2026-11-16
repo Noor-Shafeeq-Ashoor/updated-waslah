@@ -1,6 +1,6 @@
 package com.ga.notification_service.security;
 
-import com.ga.workspace_service.model.Role;
+import com.ga.notification_service.model.Role;
 
 public record JwtPrincipal(Long id, String username, Role role) {
 
