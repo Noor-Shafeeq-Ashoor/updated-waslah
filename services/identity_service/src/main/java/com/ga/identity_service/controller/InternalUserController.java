@@ -17,6 +17,7 @@ import java.util.List;
 
 @Hidden
 @Slf4j
+@RestController
 @RequestMapping("/api/internal/users")
 @RequiredArgsConstructor
 public class InternalUserController {

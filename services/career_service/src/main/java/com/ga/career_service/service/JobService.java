@@ -91,10 +91,7 @@ public class JobService {
 
 
     public List<JobResponse> getAllJobs() {
-        return jobRepository.findAll()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return toResponses(jobRepository.findAll());
     }
 
 
@@ -147,10 +144,7 @@ public class JobService {
                 pageable
         );
 
-        List<JobResponse> content = result.getContent()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        List<JobResponse> content = toResponses(result.getContent());
 
         return new PageResponse<>(
                 content,
@@ -230,7 +224,7 @@ public class JobService {
             int filled = job.getFilledVacancies() == null ? 0 : job.getFilledVacancies();
             if (request.getVacancies() < filled) { throw new ConflictException( "Vacancies cannot be lower than the " + filled +" applicant(s) already accepted"
             );}
-        job.setVacancies(request.getVacancies()); }
+            job.setVacancies(request.getVacancies()); }
 
         Job savedJob = jobRepository.save(job);
 

@@ -110,6 +110,7 @@ public class AuthController {
             log.info("Login successful");
 
             String token = jwtService.generateToken(
+                    user.getId(),
                     authentication.getName(),
                     user.getRole().name()
             );

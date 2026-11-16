@@ -45,7 +45,7 @@ public class UserService {
     }
 
 
-     // Registers a new user and sends an email verification message.
+    // Registers a new user and sends an email verification message.
 
     @Transactional
     public User register(RegisterRequest request) {
@@ -115,7 +115,7 @@ public class UserService {
 
         auditService.log(performedBy, "USER_REACTIVATED", "USER", user.getId());
 
-        log.info("Admin {} deactivated user account {}", performedBy, userId);
+        log.info("Admin {} reactivated user account {}", performedBy, userId);
     }
 
 
@@ -163,8 +163,8 @@ public class UserService {
     public void changePassword(String username, ChangePasswordRequest request) {
 
         User user = userRepository.findByUsername(username).orElseThrow(() ->
-                        new ResourceNotFoundException("User not found")
-                );
+                new ResourceNotFoundException("User not found")
+        );
 
         // Verify the current password before allowing the change.
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
@@ -232,7 +232,7 @@ public class UserService {
     }
     private User findUser(Long id) {
         return userRepository.findById(id).orElseThrow(() ->
-                        new ResourceNotFoundException("User with ID " + id + " was not found"));
+                new ResourceNotFoundException("User with ID " + id + " was not found"));
     }
 
 }

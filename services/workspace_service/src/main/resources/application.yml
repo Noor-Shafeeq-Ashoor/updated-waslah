@@ -20,6 +20,16 @@ spring:
     hibernate:
       # validate: the service never changes tables; it fails fast if its entities do not match them.
       ddl-auto: ${DDL_AUTO:validate}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        # Never hold a request for long if Kafka is down: fail fast and log.
+        max.block.ms: 3000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
 
 jwt:
   secret: ${JWT_SECRET}
@@ -29,6 +39,15 @@ internal:
 
 services:
   identity-url: ${IDENTITY_URL:http://localhost:8081}
+
+app:
+  notifications:
+    # kafka (default) or log (no broker needed, used by tests)
+    publisher: ${NOTIFICATION_PUBLISHER:kafka}
+  kafka:
+    topics:
+      booking-events: booking-events
+      session-events: session-events
 
 management:
   endpoints:

@@ -17,4 +17,4 @@ internal:
 
 logging:
   level:
-    com.ga.career-service: WARN
+    com.ga.career_service: WARN

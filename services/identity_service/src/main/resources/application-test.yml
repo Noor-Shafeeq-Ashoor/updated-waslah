@@ -17,4 +17,4 @@ internal:
 
 logging:
   level:
-    com.ga.waslah: WARN
+    com.ga.identity_service: WARN

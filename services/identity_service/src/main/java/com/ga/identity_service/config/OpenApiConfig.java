@@ -16,9 +16,9 @@ public class OpenApiConfig {
 
         return new OpenAPI()
                 .info(new Info()
-                        .title("WASLAH API")
+                        .title("WASLAH Identity API")
                         .description("""
-                                REST API for jobs and study-space (café) bookings.
+                                Users, login, profiles, email verification, password reset, employer requests and admin.
 
                                 **How to authorize:** call `POST /auth/login`, copy the `token`, click **Authorize** and paste it (without the `Bearer ` prefix).
 

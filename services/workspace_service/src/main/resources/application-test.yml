@@ -8,6 +8,11 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+  kafka:
+    admin:
+      auto-create: false
+    listener:
+      auto-startup: false
 
 jwt:
   secret: test-only-secret-key-that-is-at-least-32-chars-long
@@ -17,4 +22,8 @@ internal:
 
 logging:
   level:
-    com.ga.waslah: WARN
+    com.ga.workspace_service: WARN
+
+app:
+  notifications:
+    publisher: log

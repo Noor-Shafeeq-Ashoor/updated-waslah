@@ -22,4 +22,4 @@ internal:
 
 logging:
   level:
-    com.ga.waslah: WARN
+    com.ga.notification_service: WARN

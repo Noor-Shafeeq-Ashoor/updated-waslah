@@ -14,6 +14,7 @@ import com.ga.workspace_service.repository.CafeRepository;
 import com.ga.workspace_service.security.CurrentUser;
 import com.ga.workspace_service.security.JwtPrincipal;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -145,6 +146,7 @@ public class CafeRegistrationService {
     // APPROVE / REJECT REQUEST
     // =========================
 
+    @Transactional
     public CafeRegistrationResponse decideRequest(
             Long requestId,
             String username,
@@ -228,6 +230,11 @@ public class CafeRegistrationService {
         cafeRepository.save(cafe);
 
         var approvedRequest = requestRepository.save(registrationRequest);
+
+        // Promote the user to Cafe Manager in identity-service.
+        // If identity-service does not confirm, this throws and the transaction
+        // rolls back the new cafe and the APPROVED status.
+        identityClient.changeRole(managerUserId, Role.CAFE_MANAGER.name());
 
         auditService.log(
                 username,

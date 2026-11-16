@@ -22,7 +22,8 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      # validate: the service never changes tables; it fails fast if its entities do not match them.
+      ddl-auto: ${DDL_AUTO:validate}
     show-sql: false
     open-in-view: false
 

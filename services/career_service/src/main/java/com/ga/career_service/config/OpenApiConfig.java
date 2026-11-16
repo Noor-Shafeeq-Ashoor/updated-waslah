@@ -16,11 +16,11 @@ public class OpenApiConfig {
 
         return new OpenAPI()
                 .info(new Info()
-                        .title("WASLAH API")
+                        .title("WASLAH Career API")
                         .description("""
-                                REST API for jobs and study-space (café) bookings.
+                                Job listings and job applications.
 
-                                **How to authorize:** call `POST /auth/login`, copy the `token`, click **Authorize** and paste it (without the `Bearer ` prefix).
+                                **How to authorize:** call `POST /auth/login` on identity-service (8081), copy the `token`, click **Authorize** and paste it (without the `Bearer ` prefix).
 
                                 **Roles:** USER, EMPLOYER, CAFE_MANAGER, ADMIN. Endpoints marked with a lock need a valid JWT; role requirements are listed in each endpoint's description.
 

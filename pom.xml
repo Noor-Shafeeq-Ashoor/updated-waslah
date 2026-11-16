@@ -114,7 +114,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
-	</dependencies>
+        <dependency>
+            <groupId>com.ga</groupId>
+            <artifactId>waslah</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
 
 
 	<build>

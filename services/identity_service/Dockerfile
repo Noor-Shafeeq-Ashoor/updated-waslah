@@ -10,7 +10,7 @@ RUN mvn -B -q package -DskipTests
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 RUN useradd --system --uid 1001 waslah
-COPY --from=build /app/target/identity_service-*.jar app.jar
+COPY --from=build /app/target/identity-service-*.jar app.jar
 USER waslah
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
