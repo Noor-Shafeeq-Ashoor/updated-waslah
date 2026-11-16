@@ -1,10 +1,10 @@
-
 package com.ga.notification_service.controller;
 
-import com.ga.waslah.dto.NotificationResponse;
-import com.ga.waslah.dto.PageResponse;
-import com.ga.waslah.service.NotificationService;
-import com.ga.waslah.service.StoredNotificationService;
+import com.ga.notification_service.security.CurrentUser;
+import com.ga.notification_service.dto.NotificationResponse;
+import com.ga.notification_service.dto.PageResponse;
+import com.ga.notification_service.service.NotificationService;
+import com.ga.notification_service.service.StoredNotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -26,18 +26,21 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final StoredNotificationService storedNotificationService;
+    private final CurrentUser currentUser;
 
     public NotificationController(
             NotificationService notificationService,
-            StoredNotificationService storedNotificationService
+            StoredNotificationService storedNotificationService,
+            CurrentUser currentUser
     ) {
         this.notificationService = notificationService;
         this.storedNotificationService = storedNotificationService;
+        this.currentUser = currentUser;
     }
 
     @Operation(
             summary = "Subscribe to real-time notifications (SSE)",
-            description = "Opens a long-lived text/event-stream for the authenticated user. Events: BOOKING_CREATED (to the booker and the café manager), BOOKING_FAILED, BOOKING_CONFIRMED, BOOKING_REJECTED and BOOKING_CANCELLED (to the booker), and the study-session events SESSION_JOINED and SESSION_LEFT (to the organizer), SESSION_WAITLISTED, SESSION_PROMOTED and SESSION_LEFT_WAITLIST (to the user concerned), and SESSION_CANCELLED / SESSION_COMPLETED (to every participant and waitlisted user). Session events are also stored; see GET /api/notifications. Send the JWT in the Authorization header; browsers' native EventSource cannot set headers, so use fetch/EventSource polyfills. Swagger UI does not render live streams."
+            description = "Opens a long-lived text/event-stream for the authenticated user. Events: BOOKING_CREATED (to the booker and the café manager), BOOKING_FAILED, BOOKING_CONFIRMED, BOOKING_REJECTED and BOOKING_CANCELLED (to the booker), and the study-session events SESSION_JOINED and SESSION_LEFT (to the organizer), SESSION_WAITLISTED, SESSION_PROMOTED and SESSION_LEFT_WAITLIST (to the user concerned), and SESSION_CANCELLED / SESSION_COMPLETED (to every participant and waitlisted user). Every event is also stored (delivered by notification-service from Kafka); see GET /api/notifications. Send the JWT in the Authorization header; browsers' native EventSource cannot set headers, so use fetch/EventSource polyfills. Swagger UI does not render live streams."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Event stream opened"),
@@ -45,7 +48,7 @@ public class NotificationController {
     })
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamNotifications(Authentication authentication) {
-        return notificationService.subscribe(authentication.getName());
+        return notificationService.subscribe(currentUser.get().id());
     }
 
     @Operation(
@@ -65,7 +68,7 @@ public class NotificationController {
             Authentication authentication
     ) {
         return storedNotificationService.list(
-                authentication.getName(), unreadOnly, page, size);
+                currentUser.get().id(), unreadOnly, page, size);
     }
 
     @Operation(
@@ -79,7 +82,7 @@ public class NotificationController {
     @GetMapping("/unread-count")
     public Map<String, Long> getUnreadCount(Authentication authentication) {
         return Map.of("unread",
-                storedNotificationService.unreadCount(authentication.getName()));
+                storedNotificationService.unreadCount(currentUser.get().id()));
     }
 
     @Operation(
@@ -96,6 +99,6 @@ public class NotificationController {
             @PathVariable Long id,
             Authentication authentication
     ) {
-        return storedNotificationService.markRead(id, authentication.getName());
+        return storedNotificationService.markRead(id, currentUser.get().id());
     }
 }
