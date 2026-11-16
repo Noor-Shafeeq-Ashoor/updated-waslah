@@ -1,7 +1,7 @@
 package com.ga.notification_service.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ga.workspace_service.security.InternalApiFilter;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,7 +22,6 @@ import java.util.Map;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final InternalApiFilter internalApiFilter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
 
@@ -109,11 +108,6 @@ public class SecurityConfig {
                                     objectMapper.writeValue( response.getOutputStream(), error);
                                 }
                         )
-                )
-
-                .addFilterBefore(
-                        internalApiFilter,
-                        UsernamePasswordAuthenticationFilter.class
                 )
 
                 .addFilterBefore(
