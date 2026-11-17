@@ -1,0 +1,197 @@
+# WASLAH CI/CD
+# Push / pull request -> build and test each service -> build the frontend
+# -> build Docker images (version-tagged) -> push to Amazon ECR -> deploy to EC2 (with approval).
+#
+# Pull requests: build, test and build images only (nothing is pushed or deployed).
+# default branch (main or master): the same, then push images and deploy once AWS is configured
+#                (GitHub variables AWS_ROLE_ARN, AWS_REGION, EC2_INSTANCE_ID - see docs/ci-cd.md).
+# Manual run:    Actions -> CI/CD -> Run workflow; enter a version (e.g. 1.0.12) to redeploy or roll back.
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing image version to deploy (e.g. 1.0.12). Leave empty to build and deploy this commit."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write   # lets the pipeline sign in to AWS with a short-lived role (OIDC); no AWS keys in GitHub
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Every pipeline run produces one version for all images, e.g. 1.0.27
+  VERSION: 1.0.${{ github.run_number }}
+
+jobs:
+  # ---------------------------------------------------------------- 1. build + tests, one job per service
+  test:
+    name: Build & test (${{ matrix.service }})
+    if: ${{ !inputs.version }}   # skipped when redeploying an existing version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [identity_service, career_service, workspace_service, notification_service]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: services/${{ matrix.service }}/pom.xml
+
+      - name: Compile, run tests, package
+        env:
+          # Tests use the "test" profile: in-memory H2, no PostgreSQL, Kafka or real secrets needed.
+          SPRING_PROFILES_ACTIVE: test
+        run: mvn -B -ntp -f services/${{ matrix.service }}/pom.xml verify
+
+      - name: Keep test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.service }}
+          path: services/${{ matrix.service }}/target/surefire-reports/
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------- 2. frontend compiles
+  frontend:
+    name: Build frontend
+    if: ${{ !inputs.version }}   # skipped when redeploying an existing version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  # ---------------------------------------------------------------- 3. Docker images (+ push to ECR on main)
+  images:
+    name: Image (${{ matrix.name }})
+    needs: [test, frontend]
+    runs-on: ubuntu-latest
+    env:
+      # Push only from the default branch, and only once AWS is set up.
+      PUSH: ${{ github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && vars.AWS_ROLE_ARN != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: identity-service,     context: services/identity_service }
+          - { name: career-service,       context: services/career_service }
+          - { name: workspace-service,    context: services/workspace_service }
+          - { name: notification-service, context: services/notification_service }
+          - { name: frontend,             context: frontend }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to AWS (short-lived role)
+        if: env.PUSH == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: env.PUSH == 'true'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build${{ env.PUSH == 'true' && ' and push' || '' }} ${{ matrix.name }}:${{ env.VERSION }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ env.PUSH == 'true' }}
+          tags: |
+            ${{ steps.ecr.outputs.registry || 'local' }}/waslah/${{ matrix.name }}:${{ env.VERSION }}
+            ${{ steps.ecr.outputs.registry || 'local' }}/waslah/${{ matrix.name }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # ---------------------------------------------------------------- 4. deploy to EC2 (approval required)
+  deploy:
+    name: Deploy to AWS
+    needs: [images]
+    # Runs after a successful main build, or for a manual redeploy/rollback of an existing version.
+    if: >-
+      ${{
+        always()
+        && !cancelled()
+        && github.ref_name == github.event.repository.default_branch
+        && github.event_name != 'pull_request'
+        && vars.AWS_ROLE_ARN != ''
+        && vars.AWS_REGION != ''
+        && vars.EC2_INSTANCE_ID != ''
+        && (
+          (github.event_name == 'workflow_dispatch' && inputs.version != '')
+          || needs.images.result == 'success'
+        )
+      }}
+    runs-on: ubuntu-latest
+    environment: production   # add a required reviewer to this environment = manual approval gate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Run the deploy script on the EC2 host (SSM, no SSH keys)
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          DEPLOY_VERSION: ${{ inputs.version || env.VERSION }}
+        run: |
+          echo "Deploying version $DEPLOY_VERSION to $INSTANCE_ID"
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "WASLAH deploy $DEPLOY_VERSION" \
+            --parameters "commands=[\"sudo -iu ec2-user /opt/waslah/scripts/deploy.sh $DEPLOY_VERSION\"]" \
+            --query Command.CommandId --output text)
+
+          # Wait up to 15 minutes (pulling images and health checks take a while)
+          for i in $(seq 1 90); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+                     --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Pending|InProgress|Delayed) sleep 10 ;; *) break ;; esac
+          done
+
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text
+          echo "Deploy status: $STATUS"
+          if [ "$STATUS" != "Success" ]; then
+            aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query StandardErrorContent --output text
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          DEPLOY_VERSION: ${{ inputs.version || env.VERSION }}
+        run: echo "### Deployed WASLAH $DEPLOY_VERSION (${{ job.status }})" >> "$GITHUB_STEP_SUMMARY"
