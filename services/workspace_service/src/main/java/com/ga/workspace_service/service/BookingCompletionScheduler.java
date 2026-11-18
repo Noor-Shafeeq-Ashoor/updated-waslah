@@ -7,6 +7,7 @@ import com.ga.workspace_service.repository.SessionWaitlistRepository;
 import com.ga.workspace_service.repository.StudySessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,11 @@ import java.util.List;
  * with booking cancellation and study-session operations.
  */
 @Service
+@ConditionalOnProperty(
+        name = "waslah.booking.scheduler.enabled",
+        havingValue = "true",
+        matchIfMissing = true
+)
 @Slf4j
 @RequiredArgsConstructor
 public class BookingCompletionScheduler {
@@ -34,7 +40,9 @@ public class BookingCompletionScheduler {
     private final AuditService auditService;
 
     /**
-     * Runs every minute and completes confirmed bookings whose end time has passed.
+     * Runs every minute to cancel expired pending bookings
+     * and complete confirmed bookings whose end time has passed.
+     *
      * Booking and session updates happen atomically
      * inside the same database transaction.
      */
@@ -43,7 +51,10 @@ public class BookingCompletionScheduler {
     public void completeExpiredBookings() {
 
         participationLockService.lockStudySessionWrites();
+
         LocalDateTime now = LocalDateTime.now();
+
+        // Cancel expired pending bookings.
         List<Booking> expiredPending =
                 bookingRepository.findByStatusAndEndTimeLessThan(
                         BookingStatus.PENDING,
@@ -52,15 +63,24 @@ public class BookingCompletionScheduler {
 
         for (Booking booking : expiredPending) {
             booking.setStatus(BookingStatus.CANCELLED);
-            auditService.log("SYSTEM", "BOOKING_EXPIRED", "BOOKING", booking.getId());
+            auditService.log(
+                    "SYSTEM",
+                    "BOOKING_EXPIRED",
+                    "BOOKING",
+                    booking.getId()
+            );
         }
 
         if (!expiredPending.isEmpty()) {
             bookingRepository.saveAll(expiredPending);
-            log.info("Automatically cancelled {} expired pending bookings",
-                    expiredPending.size());
+
+            log.info(
+                    "Automatically cancelled {} expired pending bookings",
+                    expiredPending.size()
+            );
         }
 
+        // Complete expired confirmed bookings.
         List<Booking> expiredBookings =
                 bookingRepository.findByStatusAndEndTimeLessThan(
                         BookingStatus.CONFIRMED,
@@ -75,10 +95,9 @@ public class BookingCompletionScheduler {
 
         for (Booking booking : expiredBookings) {
 
-            // The booking has expired and was still confirmed.
             booking.setStatus(BookingStatus.COMPLETED);
 
-            // A booking may or may not have a study session.
+            // A booking may or may not have a linked study session.
             StudySession session = studySessionRepository
                     .findByBooking_Id(booking.getId())
                     .orElse(null);
@@ -88,17 +107,24 @@ public class BookingCompletionScheduler {
                             session.getStatus() == StudySessionStatus.FULL)) {
 
                 session.setStatus(StudySessionStatus.COMPLETED);
-                // Anyone still waiting can no longer be promoted.
-                sessionWaitlistRepository.deleteBySession_Id(session.getId());
-                sessionActivityService.record(session, null,
+
+                // Waiting participants can no longer be promoted.
+                sessionWaitlistRepository.deleteBySession_Id(
+                        session.getId()
+                );
+
+                sessionActivityService.record(
+                        session,
+                        null,
                         SessionEventType.COMPLETED,
-                        "Booking " + booking.getId() + " ended");
+                        "Booking " + booking.getId() + " ended"
+                );
+
                 completedSessions++;
             }
         }
 
-        // Persist both types of changes in one transaction.
-        // If the transaction fails, both are rolled back.
+        // Persist completed bookings in the same transaction.
         bookingRepository.saveAll(expiredBookings);
 
         log.info(
