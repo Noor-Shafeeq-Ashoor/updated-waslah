@@ -6,7 +6,6 @@ WASLAH helps students, job seekers, employers, and café managers connect throug
 
 Originally developed as a Spring Boot monolith, WASLAH was subsequently restructured into **four Spring Boot microservices**, with containerization, asynchronous messaging, automated testing, and CI/CD deployment workflows.
 
-> **Implementation note:** This README combines the original project documentation with the WASLAH 4.0 migration details. The exact AWS deployment status, Kafka topic names, production URLs, and current controller routes should be checked against the latest repository before presenting them as deployed or verified.
 
 ## Contents
 
