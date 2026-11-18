@@ -2,10 +2,11 @@
 
 **A full-stack platform connecting career opportunities, professional development, and bookable study spaces.**
 
-WASLAH helps students, job seekers, employers, and café managers connect through a single application. Users can discover jobs, apply for opportunities, reserve study spaces, and organize collaborative study sessions. Employers manage vacancies and applications, while café managers manage spaces and bookings.
+WASLAH helps students, job seekers, freelancers, employers, and café managers connect through a single application. Users can discover jobs, apply for opportunities, reserve study spaces, and organize collaborative study sessions. Employers manage vacancies and applications, while café managers manage spaces and bookings.
 
 Originally developed as a Spring Boot monolith, WASLAH was subsequently restructured into **four Spring Boot microservices**, with containerization, asynchronous messaging, automated testing, and CI/CD deployment workflows.
 
+> **Implementation note:** This README combines the original project documentation with the WASLAH 4.0 migration details. The repository snapshot confirms the Kafka topic names and deployment configuration. A live AWS endpoint and the latest GitHub workflow outcome have not been independently verified.
 
 ## Contents
 
@@ -94,7 +95,7 @@ flowchart TB
 
 **Authentication:** Identity issues signed JWTs. Other services validate tokens using the configured shared JWT secret. The JWT contains the user identifier and role so downstream services can authorize requests without relying on an API gateway.
 
-**Messaging:** Kafka supports asynchronous service-to-service event handling. The exact topic names, producers, consumers, and retry configuration should be read from the current source and deployment configuration.
+**Messaging:** Kafka supports asynchronous service-to-service event handling. Workspace publishes JSON notification events to `booking-events` and `session-events`; Notification consumes both through `@KafkaListener`. Topic definitions use three partitions and replication factor one in the inspected project snapshot. See `docs/KAFKA_EVENTS.md`.
 
 ## Technology stack
 
@@ -273,6 +274,17 @@ $env:SPRING_PROFILES_ACTIVE = "test"
 .\mvnw.cmd clean verify
 ```
 
+### Verified Workspace test run — November 18, 2026
+
+The most recent shared local output reported **BUILD SUCCESS** with **5 tests passed**:
+
+- **4 Surefire tests:** one Spring application-context test and three Cucumber BDD scenarios.
+- **1 Failsafe integration test:** `BookingConcurrencyIT`, running against **PostgreSQL 17 in Testcontainers**.
+- The concurrency test checks simultaneous booking attempts for the same study space and time slot, with one successful reservation and one rejected conflicting attempt.
+
+`mvn verify` is important: it executes Failsafe integration tests as well as the ordinary Surefire tests. Testcontainers requires a working Docker daemon. The booking scheduler can be disabled in H2 context tests through `waslah.booking.scheduler.enabled=false`, while remaining enabled by default for normal application operation.
+
+The original monolith also documented tests for authentication, rate limiting, job vacancies, notifications, study-session participation, and other business rules. Those historical counts should not be treated as the current four-service test totals without rerunning the individual projects.
 
 ## CI/CD and AWS
 
@@ -370,3 +382,23 @@ The following resources were listed in the original WASLAH documentation and are
 ---
 
 **WASLAH 4.0** — Java / Spring Boot microservices, React, PostgreSQL, Kafka, Docker, automated testing, and AWS-oriented CI/CD.
+
+
+## Final submission documentation
+
+- [Architecture and communication](docs/ARCHITECTURE.md)
+- [Kafka topics, producers, consumers, and event contracts](docs/KAFKA_EVENTS.md)
+- [API reference and Swagger verification](docs/API_DOCUMENTATION.md)
+- [Updated ERD and ownership](docs/ERD.md)
+- [Productionization project plan](docs/PROJECT_PLAN_4.md)
+- [Updated operational user stories](docs/USER_STORIES_4.md)
+- [Deployment evidence checklist](docs/DEPLOYMENT_EVIDENCE.md)
+
+The existing `USER STORY.md` and `PROJECT PLAN.md` from Projects 2–3 remain part of the project history; these new documents supplement them.
+
+### Known limitations / unresolved verification
+
+- The services use a **shared PostgreSQL database and schema**; independent deployment does not imply independent database migration.
+- Kafka in the local Compose snapshot is a **single broker**, with replication factor 1 and no persistent Kafka volume; this is not a highly available production Kafka cluster.
+- AWS deployment evidence, live endpoint, and complete current CI run status must be attached from the user's AWS/GitHub accounts.
+- Exact production secrets, hostnames, AWS resource identifiers, and private endpoints must never be committed.
