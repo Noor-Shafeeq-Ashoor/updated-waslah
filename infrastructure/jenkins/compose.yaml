@@ -1,0 +1,22 @@
+# Local Jenkins for WASLAH:
+#   cd infrastructure/jenkins
+#   copy .env.example to .env and fill it in (never commit .env)
+#   docker compose up -d --build        ->  http://localhost:8090
+name: waslah-jenkins
+
+services:
+  jenkins:
+    build: .
+    image: waslah-jenkins:local
+    # Runs as root so it can use the host's Docker socket to build images (local demo setup).
+    user: root
+    ports:
+      - "8090:8080"
+    env_file: .env
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  jenkins-home:

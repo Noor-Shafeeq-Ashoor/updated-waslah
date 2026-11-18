@@ -1,0 +1,81 @@
+# Jenkins configuration as code. Values in ${...} come from infrastructure/jenkins/.env (never committed).
+jenkins:
+  systemMessage: "WASLAH CI/CD"
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID:-admin}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: AWS_REGION
+            value: "${AWS_REGION:-us-east-1}"
+          - key: EC2_INSTANCE_ID
+            value: "${EC2_INSTANCE_ID:-}"
+          - key: DEPLOY_BUCKET
+            value: "${DEPLOY_BUCKET:-}"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: aws-jenkins
+              description: "AWS access key of IAM user waslah-jenkins"
+              username: "${AWS_ACCESS_KEY_ID:-not-set}"
+              password: "${AWS_SECRET_ACCESS_KEY:-not-set}"
+          - usernamePassword:
+              scope: GLOBAL
+              id: github
+              description: "GitHub user + token (only needed for a private repository)"
+              username: "${GITHUB_USER:-not-set}"
+              password: "${GITHUB_TOKEN:-not-set}"
+
+unclassified:
+  location:
+    url: "http://localhost:8090/"
+
+# One multibranch job: every pushed branch is built and tested; master/main also deploys.
+# Jenkins checks GitHub for new commits every 2 minutes (a laptop cannot receive GitHub webhooks).
+jobs:
+  - script: >
+      multibranchPipelineJob('waslah') {
+        displayName('WASLAH')
+        description('Build, test, Docker images, push to Amazon ECR, deploy to AWS')
+        branchSources {
+          branchSource {
+            source {
+              git {
+                id('waslah-git')
+                remote('${GIT_REPO_URL}')
+                credentialsId('github')
+                traits {
+                  gitBranchDiscovery()
+                }
+              }
+            }
+          }
+        }
+        factory {
+          workflowBranchProjectFactory {
+            scriptPath('Jenkinsfile')
+          }
+        }
+        triggers {
+          periodicFolderTrigger {
+            interval('2m')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(5)
+          }
+        }
+      }
