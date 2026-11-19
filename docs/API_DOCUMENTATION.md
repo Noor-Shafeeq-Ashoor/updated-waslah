@@ -1,6 +1,6 @@
 # WASLAH 4.0 — Service-specific API Reference
 
-Generated from controller mapping annotations in the uploaded repository snapshot. This is a **route inventory**, not a runtime-tested OpenAPI export. DTO field schemas, exact response status codes and authorization annotations must be checked in each controller and its Swagger `/v3/api-docs`.
+Every endpoint of the four services, taken from the controllers. Each running service also publishes interactive documentation with request and response schemas at `/swagger-ui/index.html` (OpenAPI JSON at `/v3/api-docs`).
 
 | Service | Method | Route / mapping fragment | Controller |
 |---|---|---|---|
@@ -81,7 +81,7 @@ Generated from controller mapping annotations in the uploaded repository snapsho
 
 ## Request, response, authentication and status codes
 
-All protected APIs require `Authorization: Bearer <JWT>`; public registration/login/verification/recovery endpoints are exceptions. Role/ownership restrictions vary by controller. Request/response DTOs and exact success codes are defined by Java annotations and OpenAPI; do not infer them from the path alone.
+All protected APIs require `Authorization: Bearer <JWT>`; public registration/login/verification/recovery endpoints are exceptions. Role/ownership restrictions vary by controller. Request and response fields and status codes are listed in each service's Swagger UI.
 
 Common error categories: `400` validation, `401` missing/invalid token, `403` forbidden, `404` missing resource, `409` business conflict, `429` rate limit, `500` unexpected failure. Exact applicability varies by endpoint.
 
@@ -95,7 +95,7 @@ Common error categories: `400` validation, `401` missing/invalid token, `403` fo
 ```json
 {"studySpaceId":1,"startTime":"2026-12-01T14:00:00","endTime":"2026-12-01T15:00:00"}
 ```
-Successful booking creation returns a booking response (typically HTTP 201); overlapping reservations must be rejected. Verify exact DTO and status from the running Swagger.
+Successful booking creation returns a booking response (typically HTTP 201); overlapping reservations must be rejected.
 
 **Standard error example**:
 ```json
@@ -111,10 +111,3 @@ Successful booking creation returns a booking response (typically HTTP 201); ove
 | Notification | http://localhost:8084/swagger-ui/index.html | http://localhost:8084/v3/api-docs |
 
 For Kafka topics and JSON event contracts, see [KAFKA_EVENTS.md](KAFKA_EVENTS.md). Kafka events are not REST endpoints.
-
-## Final verification
-
-- [ ] Start each service and export its `/v3/api-docs` JSON.
-- [ ] Confirm all route inventory entries and exact request/response schemas.
-- [ ] Confirm `@PreAuthorize` and ownership requirements.
-- [ ] Verify status codes with integration tests/Postman.

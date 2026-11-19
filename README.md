@@ -1,404 +1,332 @@
-# WASLAH 4.0 — Career & Collaborative Workspace Platform
+# WASLAH 4.0 — Career & Study-Space Platform (Microservices)
 
-**A full-stack platform connecting career opportunities, professional development, and bookable study spaces.**
+WASLAH connects people with **work** and with **places to work**. Job seekers browse jobs and apply; employers publish jobs and choose candidates; café managers list study spaces; students book a desk or room and turn a booking into a group study session with a fair waitlist.
 
-WASLAH helps students, job seekers, freelancers, employers, and café managers connect through a single application. Users can discover jobs, apply for opportunities, reserve study spaces, and organize collaborative study sessions. Employers manage vacancies and applications, while café managers manage spaces and bookings.
-
-Originally developed as a Spring Boot monolith, WASLAH was subsequently restructured into **four Spring Boot microservices**, with containerization, asynchronous messaging, automated testing, and CI/CD deployment workflows.
-
-> **Implementation note:** This README combines the original project documentation with the WASLAH 4.0 migration details. The repository snapshot confirms the Kafka topic names and deployment configuration. A live AWS endpoint and the latest GitHub workflow outcome have not been independently verified.
+The project started as a single Spring Boot application (Units 2–3). In Unit 4 it was **productionized**: split into four Spring Boot microservices, containerized with Docker, connected with Apache Kafka, built and deployed by a Jenkins CI/CD pipeline, and deployed to AWS.
 
 ## Contents
 
-1. [Overview and roles](#overview-and-roles)
-2. [Features](#features)
-3. [Architecture](#architecture)
-4. [Technology stack](#technology-stack)
-5. [Repository layout](#repository-layout)
-6. [Business rules and concurrency](#business-rules-and-concurrency)
-7. [Running locally](#running-locally)
-8. [API and Swagger](#api-and-swagger)
-9. [Testing](#testing)
-10. [CI/CD and AWS](#cicd-and-aws)
-11. [Security and configuration](#security-and-configuration)
-12. [Challenges and future improvements](#challenges-and-future-improvements)
-13. [Credits and external resources](#credits-and-external-resources)
+1. [Users and roles](#1-users-and-roles)
+2. [Features](#2-features)
+3. [Architecture](#3-architecture)
+4. [Data model (ERD)](#4-data-model-erd)
+5. [Asynchronous messaging with Kafka](#5-asynchronous-messaging-with-kafka)
+6. [Business rules and concurrency](#6-business-rules-and-concurrency)
+7. [Technology stack](#7-technology-stack)
+8. [Repository layout](#8-repository-layout)
+9. [Run locally with Docker Compose](#9-run-locally-with-docker-compose)
+10. [API documentation](#10-api-documentation)
+11. [Testing](#11-testing)
+12. [CI/CD pipeline (Jenkins)](#12-cicd-pipeline-jenkins)
+13. [AWS deployment](#13-aws-deployment)
+14. [Security](#14-security)
+15. [Project documents](#15-project-documents)
+16. [Challenges, limitations and next steps](#16-challenges-limitations-and-next-steps)
+17. [Credits and resources](#17-credits-and-resources)
 
-## Overview and roles
+---
 
-WASLAH addresses two connected needs: **finding meaningful work** and **finding suitable places to study or work**. The application uses role-based access control to separate responsibilities.
+## 1. Users and roles
 
-| Role | Capabilities |
+| Role | What they can do |
 | --- | --- |
-| `USER` | Register, manage a profile, browse/apply for jobs, book study spaces, create/join study sessions, request role upgrades |
-| `EMPLOYER` | Publish and manage jobs, review applications, accept or reject candidates |
-| `CAFE_MANAGER` | Manage cafés and study spaces, review and decide bookings |
-| `ADMIN` | Manage users, review role-upgrade requests, access administrative information and audit history |
+| `USER` | Register, verify email, manage profile and photo, browse and apply for jobs, book study spaces, create and join study sessions, request to become an employer or café manager |
+| `EMPLOYER` | Publish, edit and close jobs; review applications; accept or reject candidates |
+| `CAFE_MANAGER` | Manage cafés and study spaces; confirm or cancel bookings for their cafés |
+| `ADMIN` | Approve employer and café requests, manage users, view statistics and the audit log |
 
-## Features
+Every new account starts as `USER`. Higher roles are granted only by an admin approving a request.
 
-### Identity and access
-- User registration, email verification, and JWT-based login.
-- BCrypt password hashing, account lockout, and authentication rate limiting.
-- Forgot/reset/change-password flows.
-- Profile management and profile image upload.
-- Administrator-controlled employer and café-manager role upgrades.
-- Authorization enforced through Spring Security and resource-ownership checks.
+## 2. Features
 
-### Career services
-- Job creation, browsing, filtering, and application submission.
-- Employer review and application status updates.
-- Vacancy tracking and lock-protected candidate acceptance to prevent overfilling positions.
+| Service | Features |
+| --- | --- |
+| **Identity** | Registration, email verification, JWT login, BCrypt passwords, account lockout after repeated failed logins, rate limiting on authentication endpoints, forgot/reset/change password, profile and profile image, employer requests, admin user management, statistics and audit log |
+| **Career** | Create, update, close and browse jobs (filters and pagination), apply once per job, employer review of applications, vacancy counting that cannot overfill |
+| **Workspace** | Cafés and study spaces, café registration requests, time-slot bookings with overlap protection, manager confirmation and cancellation, automatic expiry and completion of bookings, group study sessions, FIFO waitlist with automatic promotion, session history |
+| **Notification** | Stores notifications from Kafka events, unread count, mark as read, live delivery to the browser with Server-Sent Events (SSE) |
+| **Frontend** | React + TypeScript (Vite) single-page app with pages for each role, served by Nginx |
 
-### Workspace services
-- Café and study-space listings and management.
-- Time-slot bookings with overlap validation and manager confirmation/cancellation.
-- Automatic expiration of overdue pending bookings and completion of finished bookings.
-- Group study sessions linked to confirmed bookings.
-- Capacity enforcement, participant management, FIFO-eligible waitlists, and activity history.
+## 3. Architecture
 
-### Notifications and user experience
-- Stored notifications and real-time delivery using Server-Sent Events (SSE).
-- Event-driven communication across services using Apache Kafka as part of the WASLAH 4.0 architecture.
-- React/Vite frontend with role-specific interfaces.
-- Pagination, filtering, consistent API errors, and Swagger/OpenAPI documentation.
+![WASLAH AWS architecture](docs/waslah-aws-architecture.png)
 
-## Architecture
+### 3.1 Services
 
-WASLAH 4.0 uses four independently runnable Spring Boot applications. The frontend communicates with the appropriate backend service **directly**; an API gateway is not part of the current design.
+| Service | Port | Responsibility | Owns tables |
+| --- | ---: | --- | --- |
+| Identity | 8081 | Accounts, authentication, profiles, roles, admin | 6 |
+| Career | 8082 | Jobs and applications | 2 |
+| Workspace | 8083 | Cafés, study spaces, bookings, study sessions, waitlists | 8 |
+| Notification | 8084 | Notifications, Kafka consumer, SSE | 2 |
+| Frontend (Nginx) | 80 | Serves the React app and routes `/auth` and `/api/**` to the right service | – |
+
+Each service is its own Maven project with its own Dockerfile, image, version and health check, so it can be built, tested, deployed and restarted on its own.
+
+### 3.2 How a request flows
 
 ```mermaid
-flowchart TB
-    UI[React + Vite Frontend]
-    UI --> ID[Identity Service :8081]
-    UI --> CA[Career Service :8082]
-    UI --> WS[Workspace Service :8083]
-    UI --> NO[Notification Service :8084]
-    ID --> PG[(Shared PostgreSQL Database)]
-    CA --> PG
-    WS --> PG
-    NO --> PG
-    ID -. events .-> K[Apache Kafka]
-    CA -. events .-> K
-    WS -. events .-> K
-    K -. consumed events .-> NO
+flowchart LR
+    B[Browser] -->|HTTPS| CF[CloudFront]
+    CF -->|HTTP :80| N[Nginx + React]
+    N -->|/auth, /api/profile, /api/admin ...| I[Identity :8081]
+    N -->|/api/jobs, /api/applications| C[Career :8082]
+    N -->|/api/cafes, /api/bookings, /api/study-sessions ...| W[Workspace :8083]
+    N -->|/api/notifications + SSE stream| NO[Notification :8084]
+    C -. internal REST .-> I
+    W -. internal REST .-> I
+    W -->|booking-events, session-events| K[(Kafka)]
+    K --> NO
+    I & C & W & NO --> DB[(PostgreSQL / Amazon RDS)]
 ```
 
-| Service | Local port | Responsibility |
-| --- | ---: | --- |
-| Identity | `8081` | Authentication, user profiles, account management, role requests, administration |
-| Career | `8082` | Jobs, applications, employer workflows, vacancy management |
-| Workspace | `8083` | Cafés, study spaces, bookings, study sessions, waitlists |
-| Notification | `8084` | Notification persistence, event handling, real-time SSE delivery |
+- **Single entry point:** the browser talks only to Nginx; it does not know service ports. Nginx forwards each path prefix to its service and blocks `/api/internal/**` from outside. There is no separate API gateway; Nginx plays that routing role.
+- **Authentication without a shared session:** Identity signs a JWT that carries the user id, username and role. Every service checks the signature with the shared secret and authorizes the request itself, so no service has to call Identity just to know who the user is.
+- **Synchronous service-to-service calls:** when Career or Workspace needs another user's details (for example an applicant's name) or must change a role (approving a café request makes the user `CAFE_MANAGER`), it calls Identity's internal API with a short timeout. These calls carry a secret `X-Internal-Token` header and are never reachable from the internet.
+- **Asynchronous events:** after a booking or session change, Workspace publishes an event to Kafka and returns immediately. Notification consumes it, stores the notification and pushes it to the user's open SSE connection. If Notification is down, events wait in Kafka and are processed when it comes back.
 
-**Database decision:** The four services currently share **one PostgreSQL database and one schema**. This is a deliberate project migration decision, not database-per-service isolation. It simplifies the current deployment but creates coupling that would need to be addressed for stronger service autonomy.
+### 3.3 Data
 
-**Authentication:** Identity issues signed JWTs. Other services validate tokens using the configured shared JWT secret. The JWT contains the user identifier and role so downstream services can authorize requests without relying on an API gateway.
+All services use **one PostgreSQL database**, but **each table belongs to one service** and is only accessed by that service. Other services refer to it by id. This keeps the deployment simple (one managed database) while still keeping ownership clear. See the [ERD](docs/ERD.md).
 
-**Messaging:** Kafka supports asynchronous service-to-service event handling. Workspace publishes JSON notification events to `booking-events` and `session-events`; Notification consumes both through `@KafkaListener`. Topic definitions use three partitions and replication factor one in the inspected project snapshot. See `docs/KAFKA_EVENTS.md`.
+## 4. Data model (ERD)
 
-## Technology stack
+Full diagrams with every entity, attribute and relationship, one per service: **[docs/ERD.md](docs/ERD.md)**.
 
-| Layer | Technologies |
-| --- | --- |
-| Backend | Java 17, Spring Boot, Spring Web MVC, Spring Data JPA, Hibernate |
-| Security | Spring Security, JWT (`jjwt`), BCrypt, Jakarta Bean Validation |
-| Data | PostgreSQL; H2 for applicable test contexts |
-| Messaging | Apache Kafka; Server-Sent Events (SSE) |
-| Frontend | React, TypeScript, Vite |
-| Testing | JUnit 5, Spring Boot Test, Cucumber BDD, Testcontainers, Maven Surefire/Failsafe |
-| Packaging | Maven Wrapper, Docker, Docker Compose |
-| Automation | GitHub Actions, Jenkins |
-| AWS deployment tooling | Amazon EC2, Amazon ECR, Amazon S3, AWS Systems Manager (SSM), IAM; database hosting/configuration depends on deployed environment |
-| API documentation | Swagger / OpenAPI |
+![WASLAH overview ERD](docs/erd/overview.png)
 
-## Repository layout
+## 5. Asynchronous messaging with Kafka
 
-```text
-updated-waslah/
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml
-├── Jenkinsfile
-├── frontend/
-├── services/
-│   ├── identity_service/
-│   ├── career_service/
-│   ├── workspace_service/
-│   ├── notification_service/
-│   └── .env.example
-├── infrastructure/
-│   ├── docker/
-│   │   └── compose.prod.yaml
-│   ├── db/
-│   │   └── 01-schema.pg17.sql
-│   └── aws/
-│       └── scripts/
-│           └── deploy.sh
-└── README.md
-```
+| Topic | Producer | Consumer | Events |
+| --- | --- | --- | --- |
+| `booking-events` | Workspace | Notification | `BOOKING_CREATED`, `BOOKING_CONFIRMED`, `BOOKING_REJECTED`, `BOOKING_CANCELLED`, `BOOKING_CANCELLED_BY_MANAGER`, `BOOKING_EXPIRED` |
+| `session-events` | Workspace | Notification | `SESSION_<activity>`: joined, waitlisted, promoted, left, left waitlist, cancelled |
+| `<topic>.DLT` | Notification (error handler) | – | events that still fail after retries |
 
-The former single-application root Maven project was removed during the microservices migration. Each backend service now has its own Maven project and wrapper.
+- Each event is JSON with an `eventId`, `eventType`, `schemaVersion`, time, recipient user ids, message and the related booking or session. The message key is the booking or session id, so events about one booking stay in order.
+- Topics have 3 partitions.
+- **Retries and dead-letter topic:** a failing event is retried 3 times, 1 second apart, then moved to `<topic>.DLT` so it does not block the others.
+- **Idempotency:** Notification records every handled `eventId` in `processed_events` in the same transaction as the notification, so a redelivered event never creates a duplicate.
 
-## Business rules and concurrency
+Details: [docs/KAFKA_EVENTS.md](docs/KAFKA_EVENTS.md).
 
-### Booking lifecycle
+## 6. Business rules and concurrency
+
+### Bookings
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING: Create booking
-    PENDING --> CONFIRMED: Café manager confirms
-    PENDING --> CANCELLED: Cancel / reject / expire
-    CONFIRMED --> CANCELLED: Cancel
-    CONFIRMED --> COMPLETED: End time passes
+    [*] --> PENDING: user books
+    PENDING --> CONFIRMED: café manager confirms
+    PENDING --> CANCELLED: user cancels / manager rejects / expires
+    CONFIRMED --> CANCELLED: user or manager cancels
+    CONFIRMED --> COMPLETED: end time passes
     CANCELLED --> [*]
     COMPLETED --> [*]
 ```
 
-- A booking must have a valid future time interval.
-- An unavailable study space cannot be booked.
-- Two active bookings cannot overlap for the same space. The overlap condition is `existing.start < requested.end AND existing.end > requested.start`.
-- Booking creation uses database transactions and pessimistic row locking to avoid double-booking under concurrent requests.
-- Only the booking owner or an authorized manager may perform the applicable cancellation or decision.
-- A scheduled task handles expired pending and completed confirmed bookings.
+- The time slot must be in the future and the study space available.
+- Two active bookings of the same space cannot overlap (`existing.start < new.end AND existing.end > new.start`). The check and the insert run in one transaction with a row lock, so two simultaneous requests for the same slot cannot both succeed.
+- A scheduler expires unanswered pending bookings and completes finished ones every minute.
 
 ### Group study sessions
 
-- A session is associated with a confirmed booking and cannot exceed its study-space capacity.
-- The organizer occupies a participant seat.
-- Users cannot join the same session twice or participate in overlapping confirmed sessions.
-- Full sessions place eligible users on a FIFO waitlist.
-- Leaving a session may promote the next eligible waiting user.
-- Booking cancellation and linked session updates must remain transactionally consistent.
+- A session is created from a **confirmed** booking; its capacity cannot exceed the study space capacity. The organizer takes the first seat.
+- A user cannot join the same session twice or two overlapping sessions.
+- When a session is full, users join a **FIFO waitlist**. When someone leaves, the earliest eligible waiting user is promoted automatically.
+- Cancelling the booking cancels its session, clears the waitlist and notifies everyone.
+- All joins, leaves, promotions and cancellations take the same PostgreSQL transaction-level advisory lock, so they run one at a time even across several Workspace instances. The capacity is never exceeded and the waitlist order stays correct.
 
-### Database locking
+### Jobs
 
-Workspace operations use PostgreSQL transaction-scoped advisory locking (`pg_advisory_xact_lock`) for coordinated booking/session mutations, alongside pessimistic row locks and database uniqueness constraints. The advisory lock is released automatically on transaction commit or rollback. Its coarse-grained scope favors correctness but can reduce throughput when unrelated operations compete for the same lock.
+- A user can apply once per job. Accepting a candidate locks the job row, so simultaneous acceptances cannot fill more positions than the vacancies.
 
-Career vacancy acceptance also uses pessimistic locking so simultaneous decisions cannot exceed the number of available vacancies.
+## 7. Technology stack
 
-## Running locally
+| Area | Technology |
+| --- | --- |
+| Backend | Java 17, Spring Boot 4, Spring Web MVC, Spring Data JPA (Hibernate), Lombok |
+| Security | Spring Security, JWT (jjwt), BCrypt, Bean Validation |
+| Database | PostgreSQL 17 (Amazon RDS in production); H2 for tests |
+| Messaging | Apache Kafka 3.9 (KRaft mode), Spring Kafka; Server-Sent Events |
+| Frontend | React, TypeScript, Vite, Nginx |
+| Testing | JUnit 5, Spring Boot Test, Cucumber, Testcontainers |
+| Containers | Docker, Docker Compose |
+| CI/CD | Jenkins (pipeline as code, configuration as code) |
+| Cloud | AWS: EC2, RDS, ECR, S3, CloudFront, Systems Manager, IAM, CloudWatch, SNS |
+| API docs | springdoc OpenAPI / Swagger UI, Postman |
 
-### Prerequisites
+## 8. Repository layout
 
-- Java 17 JDK
-- Docker Desktop with Docker Compose **or** locally configured PostgreSQL/Kafka dependencies
-- Node.js and npm for the frontend
-- Git
+```text
+updated-waslah/
+├── Jenkinsfile                      CI/CD pipeline
+├── services/
+│   ├── identity_service/            Spring Boot service (port 8081)
+│   ├── career_service/              Spring Boot service (port 8082)
+│   ├── workspace_service/           Spring Boot service (port 8083)
+│   ├── notification_service/        Spring Boot service (port 8084)
+│   └── .env.example                 configuration template (copy to .env, never commit)
+├── frontend/                        React app + Nginx config + Dockerfile
+├── infrastructure/
+│   ├── docker/compose.yaml          whole system on one machine
+│   ├── docker/compose.prod.yaml     production stack on EC2 (images from ECR, RDS database)
+│   ├── db/                          database schema and demo data
+│   ├── aws/setup.sh, teardown.sh    create / delete all AWS resources
+│   ├── aws/scripts/deploy.sh        deploy script run on EC2
+│   └── jenkins/                     Jenkins image, plugins, configuration as code
+└── docs/                            ERD, architecture, Kafka, API, CI/CD, diagrams
+```
 
-### 1. Clone
+## 9. Run locally with Docker Compose
+
+**Prerequisites:** Docker Desktop, Git. (Java 17 and Node 20 only if you want to run a service outside Docker.)
 
 ```powershell
-git clone -b master https://github.com/Noor-Shafeeq-Ashoor/updated-waslah.git
+git clone https://github.com/Noor-Shafeeq-Ashoor/updated-waslah.git
 cd updated-waslah
+copy services\.env.example services\.env      # then set the passwords and secrets in it
+docker compose --env-file services/.env -f infrastructure/docker/compose.yaml up -d --build
 ```
 
-### 2. Configure secrets
-
-Use `services/.env.example` as the reference for the environment variables required by your chosen startup method. Never commit a populated `.env` file, database passwords, JWT signing secrets, SMTP credentials, or AWS credentials.
-
-Typical variables include:
-
-| Variable | Purpose |
+| Open | Address |
 | --- | --- |
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Shared PostgreSQL connection |
-| `JWT_SECRET` | JWT signing/validation secret, consistent across services |
-| `KAFKA_BOOTSTRAP` | Kafka broker address |
-| `IDENTITY_URL`, `CAREER_URL`, `WORKSPACE_URL`, `NOTIFICATION_URL` | Internal service addresses |
-| `MAIL_USERNAME`, `MAIL_APP_PASSWORD` | SMTP configuration for Identity |
-| `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Optional admin bootstrap configuration |
-| `APP_BASE_URL` | Frontend/public URL used for application links |
-| `INTERNAL_TOKEN` | Internal service authentication where required |
+| Application | http://localhost |
+| Swagger UI | http://localhost:8081/swagger-ui/index.html (8082, 8083, 8084 for the other services) |
+| Health | http://localhost:8081/actuator/health (same pattern per service) |
+| Kafka UI (optional) | add `--profile tools`, then http://localhost:8085 |
+| Second Workspace instance (optional) | add `--profile scale`, port 8093 |
 
-Set production secrets through your deployment environment or secret-management mechanism, not Git.
+Compose starts PostgreSQL (host port 5433), Kafka, the four services and the frontend. Each container has a health check, restarts automatically and has a memory limit. Stop with `docker compose -f infrastructure/docker/compose.yaml down`.
 
-### 3. Run a service
+## 10. API documentation
 
-From the repository root in **Windows PowerShell**:
+- **Swagger UI** for each service (see the table above) lists every endpoint with its request and response.
+- **Reference:** [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md).
+- Protected endpoints need `Authorization: Bearer <token>` from `POST /auth/login`.
 
-```powershell
-cd services\identity_service
-.\mvnw.cmd spring-boot:run
-```
-
-Start the other services in separate terminals using their respective directories. PostgreSQL, Kafka, and any other required infrastructure must be available first. Alternatively, use the Docker Compose configuration appropriate to your environment; check the repository for the exact local Compose filename and command.
-
-### 4. Run the frontend
-
-```powershell
-cd frontend
-npm ci
-npm run dev
-```
-
-Vite commonly serves the local frontend at `http://localhost:5173`. Confirm its actual URL and API proxy configuration in the current Vite settings.
-
-## API and Swagger
-
-Each service has its own API surface and may expose its own Swagger UI. The default local Swagger paths are:
-
-| Service | Swagger UI |
+| Service | Main endpoints |
 | --- | --- |
-| Identity | `http://localhost:8081/swagger-ui/index.html` |
-| Career | `http://localhost:8082/swagger-ui/index.html` |
-| Workspace | `http://localhost:8083/swagger-ui/index.html` |
-| Notification | `http://localhost:8084/swagger-ui/index.html` |
+| Identity | `POST /auth/register`, `POST /auth/login`, `GET /auth/verify-email`, `POST /auth/forgot-password`, `POST /auth/reset-password`, `GET/PUT /api/profile`, `PUT /api/profile/image`, `PUT /api/users/change-password`, `POST /api/employer-requests`, `/api/admin/users`, `/api/admin/employer-requests`, `/api/admin/stats`, `/api/admin/audit-logs` |
+| Career | `GET/POST /api/jobs`, `GET /api/jobs/my`, `GET/PUT/DELETE /api/jobs/{id}`, `POST /api/applications/jobs/{jobId}`, `GET /api/applications/my`, `GET /api/applications/jobs/{jobId}`, `PUT /api/applications/{id}/status` |
+| Workspace | `/api/cafes`, `/api/cafes/{cafeId}/study-spaces`, `GET /api/study-spaces`, `POST/GET /api/bookings`, `PUT /api/bookings/{id}/cancel`, `/api/manager/bookings` (confirm / cancel), `/api/cafe-requests`, `POST /api/study-sessions`, `POST /api/study-sessions/{id}/join`, `/leave`, `/events` |
+| Notification | `GET /api/notifications`, `GET /api/notifications/unread-count`, `PUT /api/notifications/{id}/read`, `GET /api/notifications/stream` (SSE) |
 
-These URLs depend on Swagger being enabled in the active profile.
+Errors use one format in every service:
 
-### Representative workflows
+```json
+{ "timestamp": "2026-11-18T10:30:00", "status": 409, "error": "CONFLICT",
+  "message": "The study space is already booked for this time", "path": "/api/bookings" }
+```
 
-| Area | Representative route | Description |
-| --- | --- | --- |
-| Identity | `POST /auth/register` | Register an account |
-| Identity | `POST /auth/login` | Authenticate and obtain a JWT |
-| Identity | `GET /auth/verify-email?token=...` | Verify email |
-| Career | `GET /api/jobs` | Browse jobs |
-| Career | `POST /api/jobs` | Create a job as an employer |
-| Career | `POST /api/applications/jobs/{jobId}` | Apply for a job |
-| Workspace | `GET /api/cafes` | Browse cafés |
-| Workspace | `POST /api/bookings` | Request a study-space booking |
-| Workspace | `POST /api/study-sessions` | Create a group session |
-| Workspace | `POST /api/study-sessions/{id}/join` | Join or enter waitlist |
-| Notification | `GET /api/notifications` | Read stored notifications |
-
-These routes reflect the documented original API; verify the current controllers after the microservices extraction, especially notification stream paths and admin endpoints. Protected requests use `Authorization: Bearer <JWT>`.
-
-## Testing
-
-Each service is independently built and tested with its Maven wrapper. For example, in Windows PowerShell:
+## 11. Testing
 
 ```powershell
 cd services\workspace_service
 $env:SPRING_PROFILES_ACTIVE = "test"
-.\mvnw.cmd clean verify
+.\mvnw.cmd verify
 ```
 
-### Verified Workspace test run — November 18, 2026
+| Test | Where | What it proves |
+| --- | --- | --- |
+| Application context tests | all 4 services | Each service starts with its configuration (H2, no Kafka needed) |
+| Cucumber BDD (`booking.feature`, 3 scenarios) | Workspace | Booking rules described in plain Given/When/Then language |
+| `BookingConcurrencyIT` (Testcontainers, PostgreSQL 17) | Workspace | Two simultaneous bookings of the same slot: exactly one succeeds |
 
-The most recent shared local output reported **BUILD SUCCESS** with **5 tests passed**:
+`mvn verify` runs both unit tests (Surefire) and integration tests (Failsafe); the Testcontainers test needs Docker. The same tests run in the pipeline, and a failing test stops it.
 
-- **4 Surefire tests:** one Spring application-context test and three Cucumber BDD scenarios.
-- **1 Failsafe integration test:** `BookingConcurrencyIT`, running against **PostgreSQL 17 in Testcontainers**.
-- The concurrency test checks simultaneous booking attempts for the same study space and time slot, with one successful reservation and one rejected conflicting attempt.
+## 12. CI/CD pipeline (Jenkins)
 
-`mvn verify` is important: it executes Failsafe integration tests as well as the ordinary Surefire tests. Testcontainers requires a working Docker daemon. The booking scheduler can be disabled in H2 context tests through `waslah.booking.scheduler.enabled=false`, while remaining enabled by default for normal application operation.
-
-The original monolith also documented tests for authentication, rate limiting, job vacancies, notifications, study-session participation, and other business rules. Those historical counts should not be treated as the current four-service test totals without rerunning the individual projects.
-
-## CI/CD and AWS
-
-The repository contains **two pipeline definitions**:
-
-| Pipeline | Role |
-| --- | --- |
-| `.github/workflows/ci-cd.yml` | GitHub Actions service tests, frontend build, Docker image build, and conditional AWS image publishing/deployment |
-| `Jenkinsfile` | Jenkins-based build/test/image workflow and AWS deployment path with a manual approval stage |
-
-### GitHub Actions workflow
-
-The workflow runs on pushes and pull requests targeting `main`/`master`, plus manual dispatch. It runs Maven verification for the four services, builds the frontend, and builds container images. When the required AWS variables, permissions, and branch conditions are satisfied, it can publish images to **Amazon ECR** and initiate deployment using **S3** and **AWS Systems Manager**.
-
-**Deployment is conditional, not guaranteed by a successful local build.** Before pushing to the default branch, confirm whether production deployment is enabled. Avoid configuring both GitHub Actions and Jenkins to deploy automatically to the same instance.
-
-### AWS deployment architecture
+The pipeline is the [`Jenkinsfile`](Jenkinsfile). Jenkins runs in Docker (`infrastructure/jenkins`) and is configured entirely from code: plugins, credentials and the job.
 
 ```mermaid
 flowchart LR
-    GH[GitHub / CI Pipeline] --> ECR[Amazon ECR\nContainer images]
-    GH --> S3[Amazon S3\nDeployment artifacts]
-    GH --> SSM[AWS Systems Manager]
-    SSM --> EC2[Amazon EC2\nDocker Compose]
-    ECR --> EC2
-    S3 --> EC2
-    EC2 --> DB[(PostgreSQL)]
+    P[git push] --> T[Build & test 4 services]
+    T --> F[Build frontend]
+    F --> D[Build 5 Docker images]
+    D -->|master only| E[Push to Amazon ECR\n1.0.build + sha]
+    E --> S[Upload release files to S3]
+    S --> A{Manual approval}
+    A --> Y[Deploy on EC2 via SSM]
 ```
 
-The repository includes a production Compose file, a PostgreSQL schema script, and an AWS deployment script. **An actual live EC2 deployment, reachable public URL, and managed database configuration have not been verified from the supplied README alone.**
+- Every pushed branch is built and tested; only `master` is pushed and deployed.
+- Images are tagged with a version (`1.0.<build>`) and the commit (`sha-<commit>`), never only `latest`.
+- Deployment needs a manual **Deploy** approval. A failed build, test or deployment marks the run red and stops it.
+- **Rollback:** run the job with `ROLLBACK_VERSION=1.0.x` to redeploy an earlier version without rebuilding.
+- The repository also keeps a GitHub Actions workflow (`.github/workflows/ci-cd.yml`) that runs the same build and tests on GitHub. Its deploy job only runs when its AWS variables are configured; Jenkins is the deployment path.
 
-## Security and configuration
+Details: [docs/ci-cd.md](docs/ci-cd.md).
 
-- JWT validation and role-based authorization are applied in each relevant service.
-- Registration assigns the base `USER` role; elevated roles require approval.
-- Account security includes BCrypt, verification, recovery, rate limiting, and lockout.
-- Sensitive configuration is supplied through environment variables.
-- Application APIs use validated DTOs and standardized error handling.
-- Database-level locks protect concurrent business invariants.
-- Do not expose internal tokens, SMTP secrets, JWT secrets, or database credentials in source control or screenshots.
+## 13. AWS deployment
 
-### Standard error format
+Region **us-east-1**. All resources are created by `infrastructure/aws/setup.sh` and removed by `teardown.sh`.
 
-```json
-{
-  "timestamp": "2026-10-15T10:30:00",
-  "status": 404,
-  "error": "RESOURCE_NOT_FOUND",
-  "message": "Booking not found",
-  "path": "/api/bookings/42"
-}
-```
+| AWS service | Use |
+| --- | --- |
+| CloudFront | Public HTTPS address in front of the application |
+| EC2 (t3.large, Amazon Linux 2023) | Runs the containers with Docker Compose (`compose.prod.yaml`) |
+| RDS for PostgreSQL 17 | Managed database, **not publicly accessible**, encrypted |
+| ECR | One private repository per image, scan on push |
+| S3 | Private bucket holding the release files for each version |
+| Systems Manager | Parameter Store for secrets; Run Command for deployment; Session Manager instead of SSH |
+| IAM | EC2 role (read images, secrets, release files); Jenkins user limited to push, upload and deploy |
+| CloudWatch + SNS + Budgets | CPU, status-check and storage alarms by email; monthly cost alert |
 
-## Challenges and future improvements
+**How a deployment works:** Jenkins pushes the images and uploads `compose.prod.yaml`, the schema and `deploy.sh` to S3, then asks Systems Manager to run `deploy.sh <version>` on EC2. The script loads the secrets from Parameter Store into a protected `.env` file, creates the database tables on the first deployment, pulls the exact image version from ECR and starts the stack, waiting until every container reports healthy.
 
-### Engineering challenges
+**Environment-specific configuration:** the same images run everywhere; only the environment changes (local `.env` with Docker PostgreSQL versus Parameter Store with RDS).
 
-1. **Extracting the monolith:** Separating Identity, Career, Workspace, and Notification responsibilities while preserving existing authentication and business rules.
-2. **Maintaining transactional correctness:** Preventing overlapping bookings, over-capacity study sessions, duplicate promotions, and overfilled job vacancies.
-3. **Event-driven notifications:** Coordinating business transactions with asynchronous messaging and real-time SSE delivery.
-4. **Testing true concurrency:** Running real PostgreSQL integration tests, rather than relying exclusively on H2 or sequential requests.
-5. **Deployment automation:** Coordinating Docker images, configuration, CI/CD credentials, and AWS deployment scripts.
+## 14. Security
 
-### Potential next steps
+- **Network:** only CloudFront can reach the server (security group with AWS's CloudFront address list, port 80 only); no SSH port is open. The database accepts connections only from the server and requires TLS. Service ports are not published; only Nginx is.
+- **Secrets:** never in Git. Locally in `services/.env` (ignored by Git); in AWS in Parameter Store (encrypted). Jenkins keeps its AWS key in its credentials store.
+- **Least privilege:** the EC2 role and the Jenkins user can do only what deployment needs.
+- **Application:** BCrypt passwords, JWT with role checks in every service, ownership checks (users only change their own data), account lockout, rate limiting, validated input, internal API protected by a secret token and blocked at Nginx.
+- **Data:** RDS storage and EC2 disks encrypted; ECR images scanned for vulnerabilities.
 
-- Move from the shared database/schema toward service-owned data and explicit contracts.
-- Introduce stronger Kafka retry, dead-letter, idempotency, and observability guarantees where needed.
-- Add frontend integration/end-to-end tests.
-- Refine advisory locking to reduce contention while preserving correctness.
-- Extend CI reports to include both Surefire and Failsafe XML results.
-- Verify production smoke tests and document actual deployment endpoints and infrastructure state.
+## 15. Project documents
 
-## Credits and external resources
+| Document | Content |
+| --- | --- |
+| [docs/ERD.md](docs/ERD.md) | ERD per service: entities, attributes, relationships |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture and communication |
+| [docs/KAFKA_EVENTS.md](docs/KAFKA_EVENTS.md) | Kafka topics and event contract |
+| [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) | API reference |
+| [docs/ci-cd.md](docs/ci-cd.md) | Jenkins pipeline |
+| [PROJECT PLAN.md](PROJECT%20PLAN.md) | Plan and progress, Units 2–4 |
+| [USER STORY.md](USER%20STORY.md) | User stories and acceptance criteria |
 
-The following resources were listed in the original WASLAH documentation and are retained here, with additional references relevant to WASLAH 4.0.
+## 16. Challenges, limitations and next steps
 
-| Resource | URL | Used for |
-| --- | --- | --- |
-| Spring Boot Documentation | https://docs.spring.io/spring-boot/ | Application setup, configuration, JPA, web MVC |
-| Spring Security Documentation | https://docs.spring.io/spring-security/reference/ | Security filter chain, authorization, BCrypt |
-| jjwt | https://github.com/jwtk/jjwt | Generating and validating JWTs |
-| springdoc-openapi | https://springdoc.org/ | Swagger UI / OpenAPI |
-| PostgreSQL Documentation | https://www.postgresql.org/docs/ | Database setup, SQL, transactions, locking |
-| Project Lombok | https://projectlombok.org/ | Boilerplate reduction |
-| Java Concurrency Tutorial | https://docs.oracle.com/javase/tutorial/essential/concurrency/ | Threads, synchronization, concurrency concepts |
-| Java ExecutorService API | https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ExecutorService.html | Concurrent test execution |
-| Apache Kafka Documentation | https://kafka.apache.org/documentation/ | Asynchronous messaging concepts |
-| Docker Documentation | https://docs.docker.com/ | Containers and Compose |
-| GitHub Actions Documentation | https://docs.github.com/en/actions | CI/CD workflows |
-| Jenkins Documentation | https://www.jenkins.io/doc/ | Pipeline automation |
-| AWS Documentation | https://docs.aws.amazon.com/ | EC2, ECR, S3, Systems Manager, IAM |
-| Testcontainers Documentation | https://java.testcontainers.org/ | PostgreSQL integration testing |
-| Cucumber Documentation | https://cucumber.io/docs/cucumber/ | Behavior-driven testing |
+**Challenges**
 
----
+1. **Splitting the monolith** without breaking login, roles and business rules: user links became ids, and user details come from Identity's internal API.
+2. **Keeping data correct under concurrency:** double bookings, over-capacity sessions, duplicate promotions and overfilled vacancies, solved with transactions, row locks, advisory locks and unique constraints, and proven with a Testcontainers test on real PostgreSQL.
+3. **Reliable events:** retries, a dead-letter topic and idempotent consumption so notifications are neither lost nor duplicated.
+4. **Deployment automation:** versioned images, secrets outside Git, and a deployment that starts the exact version and waits for health checks.
 
-**WASLAH 4.0** — Java / Spring Boot microservices, React, PostgreSQL, Kafka, Docker, automated testing, and AWS-oriented CI/CD.
+**Limitations**
 
+- One shared PostgreSQL database (with ownership per service), not one database per service.
+- One EC2 host and one Kafka broker: simple and low-cost, but not highly available.
+- No response caching yet.
+- Jenkins runs on a local machine and checks GitHub every 2 minutes instead of receiving webhooks.
 
-## Final submission documentation
+**Next steps**
 
-- [Architecture and communication](docs/ARCHITECTURE.md)
-- [Kafka topics, producers, consumers, and event contracts](docs/KAFKA_EVENTS.md)
-- [API reference and Swagger verification](docs/API_DOCUMENTATION.md)
-- [Updated ERD and ownership](docs/ERD.md)
-- [Productionization project plan](docs/PROJECT_PLAN_4.md)
-- [Updated operational user stories](docs/USER_STORIES_4.md)
-- [Deployment evidence checklist](docs/DEPLOYMENT_EVIDENCE.md)
+- Cache frequently read lists (jobs, cafés) with Spring Cache and Redis.
+- Separate databases per service, with events to keep data in sync.
+- Run on ECS or EKS behind a load balancer, with several Kafka brokers (Amazon MSK).
+- More unit and end-to-end tests, and centralized logs in CloudWatch.
 
-The existing `USER STORY.md` and `PROJECT PLAN.md` from Projects 2–3 remain part of the project history; these new documents supplement them.
+## 17. Credits and resources
 
-### Known limitations / unresolved verification
-
-- The services use a **shared PostgreSQL database and schema**; independent deployment does not imply independent database migration.
-- Kafka in the local Compose snapshot is a **single broker**, with replication factor 1 and no persistent Kafka volume; this is not a highly available production Kafka cluster.
-- AWS deployment evidence, live endpoint, and complete current CI run status must be attached from the user's AWS/GitHub accounts.
-- Exact production secrets, hostnames, AWS resource identifiers, and private endpoints must never be committed.
+| Resource | Used for |
+| --- | --- |
+| [Spring Boot](https://docs.spring.io/spring-boot/) · [Spring Security](https://docs.spring.io/spring-security/reference/) · [Spring for Apache Kafka](https://docs.spring.io/spring-kafka/reference/) | Services, security, Kafka integration |
+| [jjwt](https://github.com/jwtk/jjwt) · [springdoc-openapi](https://springdoc.org/) · [Project Lombok](https://projectlombok.org/) | JWT, Swagger, boilerplate |
+| [PostgreSQL](https://www.postgresql.org/docs/) · [Apache Kafka](https://kafka.apache.org/documentation/) | Database, locking, messaging |
+| [Docker](https://docs.docker.com/) · [Jenkins](https://www.jenkins.io/doc/) · [AWS](https://docs.aws.amazon.com/) | Containers, CI/CD, cloud |
+| [Cucumber](https://cucumber.io/docs/cucumber/) · [Testcontainers](https://java.testcontainers.org/) | BDD and integration tests |
+| [Java concurrency tutorial](https://docs.oracle.com/javase/tutorial/essential/concurrency/) | Concurrency concepts |

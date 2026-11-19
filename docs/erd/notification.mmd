@@ -1,0 +1,21 @@
+erDiagram
+    USERS ||--o{ NOTIFICATIONS : "receives"
+
+    USERS {
+        bigint id PK "owned by Identity service"
+    }
+    NOTIFICATIONS {
+        bigint id PK
+        bigint recipient_id FK "users.id, indexed with read_flag"
+        varchar type "e.g. BOOKING_CONFIRMED, PROMOTED"
+        varchar message "max 500"
+        varchar reference_type "BOOKING or STUDY_SESSION"
+        bigint reference_id "booking or session id, no FK"
+        boolean read_flag
+        timestamp created_at
+    }
+    PROCESSED_EVENTS {
+        varchar event_id PK "Kafka eventId, max 64"
+        varchar event_type
+        timestamp processed_at
+    }

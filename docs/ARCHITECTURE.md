@@ -1,53 +1,58 @@
-# WASLAH 4.0 — Final Architecture
+# WASLAH 4.0 — Architecture
 
-## Current architecture
-WASLAH migrated from one layered Spring Boot application into four separately runnable Spring Boot services and a React/Vite frontend. The frontend routes HTTP calls to each service directly (there is **no API Gateway**). Services are separately packaged, but **all share one PostgreSQL database and one schema**. Docker Compose supplies service discovery through container DNS. JWTs are issued by Identity and validated by the other services.
+WASLAH runs as **four Spring Boot microservices** and a **React frontend served by Nginx**. In production they run as Docker containers on one EC2 host behind CloudFront, with Amazon RDS as the database and Kafka for events.
 
-```mermaid
-flowchart TB
- U[Browser / React Vite] -->|HTTP REST + JWT| I[Identity :8081]
- U -->|HTTP REST + JWT| C[Career :8082]
- U -->|HTTP REST + JWT| W[Workspace :8083]
- U -->|HTTP REST + JWT / SSE| N[Notification :8084]
- I --> DB[(Shared PostgreSQL)]
- C --> DB
- W --> DB
- N --> DB
- W -->|booking-events / session-events| K[Kafka broker]
- K -->|Kafka consumer| N
- CI[GitHub Actions / Jenkins] -->|build / test / images| ECR[Amazon ECR]
- CI -->|deployment artifacts| S3[Amazon S3]
- CI -->|deployment command| SSM[AWS Systems Manager]
- SSM --> EC2[EC2 Docker Compose host]
- ECR --> EC2
-```
+![AWS architecture](waslah-aws-architecture.png)
 
-**Diagram qualification:** The AWS segment describes the repository's configured deployment flow; it does not certify a successful live deployment.
+## 1. Why these four services
 
-## Responsibilities
-| Service | Port | Owns application logic |
-|---|---:|---|
-| Identity | 8081 | Registration, email verification, JWT login, profiles, passwords, user roles, admin approvals and account administration |
-| Career | 8082 | Job offers, employer ownership, applications, vacancy counts and acceptance/rejection |
-| Workspace | 8083 | Cafés, study spaces, bookings, booking scheduler, study sessions, participants and FIFO waitlists |
-| Notification | 8084 | Kafka notification ingestion, stored notifications, unread counts, and real-time SSE |
+The monolith's packages were grouped by **business capability**, so each service can change and be deployed without the others:
 
-## Communication: synchronous and asynchronous
-**Synchronous REST:** Browser-to-service requests return an HTTP result, enforce JWT/role/ownership checks and typically complete a business transaction before returning. Cross-service HTTP URLs (`IDENTITY_URL`, `CAREER_URL`, etc.) are configured for internal lookups where needed. A failing synchronous dependency may delay or fail the request.
+| Service | Port | Business capability | Why separate |
+| --- | ---: | --- | --- |
+| Identity | 8081 | Who the user is and what they may do | Security-critical; every other service depends on its tokens |
+| Career | 8082 | Jobs and applications | Independent domain with its own users (employers, job seekers) |
+| Workspace | 8083 | Cafés, bookings, study sessions | The busiest and most concurrency-sensitive part; can be scaled alone (`--profile scale` runs a second instance) |
+| Notification | 8084 | Telling users what happened | Must not slow down or break the actions that trigger it, so it receives events asynchronously |
 
-**Asynchronous Kafka:** Workspace serializes notification events as JSON and publishes to `booking-events` or `session-events`. Notification consumes them independently and makes them available for persistence/SSE. The original business action should not wait for the end user's SSE connection. Kafka consumer retries, deduplication and operational monitoring are distinct concerns from synchronous API validation.
+## 2. Communication
 
-**Concurrency:** PostgreSQL row locks prevent overlapping bookings; PostgreSQL transaction-level advisory locks serialize session participation and booking-related changes. Career's vacancy acceptance uses row locking to prevent overfilling.
+| Type | Between | How | Used for |
+| --- | --- | --- | --- |
+| HTTP REST (synchronous) | Browser → services | Through Nginx; JWT in the `Authorization` header | All user actions |
+| HTTP REST (synchronous) | Career / Workspace → Identity | Internal API `/api/internal/**`, `X-Internal-Token` header, 2-second timeouts | User details, role changes after an approval |
+| Kafka (asynchronous) | Workspace → Notification | Topics `booking-events`, `session-events` | Notifications after booking and session changes |
+| Server-Sent Events | Notification → Browser | `GET /api/notifications/stream` | Live notifications |
 
-## Data ownership and flow
-The four services share the **same physical PostgreSQL schema**, not separate schemas/databases. Ownership is logical: Identity handles users/profiles; Career jobs/applications; Workspace cafés/bookings/sessions; Notification notifications/processed event records. The shared schema creates coupling and should not be described as strict database-per-service architecture. A typical flow is: Identity issues JWT → browser sends JWT to Workspace → Workspace checks/commits booking → Workspace emits Kafka notification → Notification consumes/stores → browser receives SSE or reads stored notifications.
+**Synchronous** calls are used when the caller needs the answer to continue (for example the applicant's name in a list). **Asynchronous** events are used when the caller does not need to wait: a booking is saved and answered at once, and the notification follows. If Notification is down, the booking still works and the events are delivered later.
 
-## Infrastructure and deployment
-- **Local:** `infrastructure/docker/compose.yaml` runs PostgreSQL, Kafka, the four services and frontend; `--profile tools` adds Kafka UI. Docker networking uses service names, not localhost.
-- **Production-oriented:** `infrastructure/docker/compose.prod.yaml` and `infrastructure/aws/scripts/deploy.sh` support deployment on EC2; ECR stores container images; S3 holds deployment artifacts; Systems Manager runs deployment commands.
-- **CI/CD:** `.github/workflows/ci-cd.yml` runs Maven `verify` across all four services, builds frontend/images, and conditionally publishes/deploys. `Jenkinsfile` provides an alternate pipeline. Avoid having both independently deploy to the same host.
-- **Security:** Secrets via environment/CI secret stores; never commit `.env`. IAM roles/OIDC are preferable to static AWS keys.
-- **Operational limitation:** local Kafka is single-broker and non-HA; shared database remains a coupling point.
+**No API gateway service:** Nginx is the single entry point. It routes by path, keeps SSE connections open without buffering, and blocks the internal API from outside.
 
-## Verification status
-Repository configuration and code were inspected from an uploaded project snapshot. A completed AWS deployment, public health endpoint and all GitHub Actions jobs are **not verified** by the snapshot alone.
+## 3. Authentication across services
+
+1. The user logs in at Identity (`POST /auth/login`) and receives a signed JWT with the user id, username and role.
+2. The browser sends it with every request.
+3. Each service validates the signature with the shared secret and applies role and ownership checks itself. No service calls Identity just to check a token.
+
+## 4. Data ownership
+
+One PostgreSQL database, **18 tables, each owned by one service**. A service reads and writes only its own tables and refers to other services' data by id (mostly `user_id`). See [ERD.md](ERD.md).
+
+This is a deliberate trade-off: one managed database keeps cost and operations low for the project, and clear ownership makes a later move to one database per service straightforward.
+
+## 5. Reliability
+
+- **Containers:** health checks on every container (`/actuator/health/readiness` for services), automatic restart, memory limits, and start-up order that waits for Kafka and healthy dependencies.
+- **Kafka:** 3 retries, then a dead-letter topic; idempotent consumer (`processed_events`).
+- **Concurrency:** row locks, a PostgreSQL advisory lock and unique constraints keep bookings, sessions and vacancies correct even with two Workspace instances.
+- **Deployment:** the exact image version is started and must report healthy; any version can be redeployed for rollback.
+
+## 6. Environments
+
+| | Local | AWS |
+| --- | --- | --- |
+| Start | `docker compose ... compose.yaml up` | Jenkins → SSM → `deploy.sh` → `compose.prod.yaml` |
+| Images | Built on the machine | Pulled from ECR, pinned version |
+| Database | PostgreSQL container | Amazon RDS (private, TLS) |
+| Configuration | `services/.env` | Parameter Store (encrypted) |
+| Entry | http://localhost | CloudFront HTTPS URL |

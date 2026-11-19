@@ -1,0 +1,58 @@
+erDiagram
+    USERS ||--o| USER_PROFILES : "has profile"
+    USERS ||--o| EMAIL_VERIFICATION_TOKENS : "verifies email with"
+    USERS ||--o| PASSWORD_RESET_TOKENS : "resets password with"
+    USERS ||--o{ EMPLOYER_REQUESTS : "submits"
+
+    USERS {
+        bigint id PK
+        varchar username UK
+        varchar email UK
+        varchar password "BCrypt hash"
+        varchar role "USER, EMPLOYER, CAFE_MANAGER, ADMIN"
+        varchar status "ACTIVE, INACTIVE"
+        int failed_login_attempts
+        timestamp locked_until "account lockout"
+        boolean email_verified
+        bigint profile_id FK, UK "user_profiles.id"
+    }
+    USER_PROFILES {
+        bigint id PK
+        varchar first_name
+        varchar last_name
+        varchar phone
+        varchar bio "max 500"
+        varchar location
+        varchar profile_image "file name"
+    }
+    EMAIL_VERIFICATION_TOKENS {
+        bigint id PK
+        varchar token UK
+        timestamp expires_at
+        bigint user_id FK, UK "users.id"
+    }
+    PASSWORD_RESET_TOKENS {
+        bigint id PK
+        varchar token UK
+        timestamp expiry_date "15 minutes"
+        boolean used
+        bigint user_id FK, UK "users.id"
+    }
+    EMPLOYER_REQUESTS {
+        bigint id PK
+        varchar company_name
+        varchar company_description "max 1000"
+        varchar job_types
+        varchar commercial_registration
+        varchar status "PENDING, APPROVED, REJECTED"
+        bigint user_id FK "users.id"
+        timestamp created_at
+    }
+    AUDIT_LOGS {
+        bigint id PK
+        varchar actor "username"
+        varchar action
+        varchar target_type
+        bigint target_id
+        timestamp timestamp
+    }

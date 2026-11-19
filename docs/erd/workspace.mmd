@@ -1,0 +1,99 @@
+erDiagram
+    USERS ||--o{ CAFE_REGISTRATION_REQUESTS : "requests a cafe"
+    USERS ||--o{ CAFES : "manages"
+    CAFES ||--o{ STUDY_SPACES : "contains"
+    STUDY_SPACES ||--o{ BOOKINGS : "is reserved by"
+    USERS ||--o{ BOOKINGS : "makes"
+    BOOKINGS ||--o| STUDY_SESSIONS : "hosts"
+    USERS ||--o{ STUDY_SESSIONS : "organizes"
+    STUDY_SESSIONS ||--o{ SESSION_PARTICIPANTS : "seats"
+    STUDY_SESSIONS ||--o{ SESSION_WAITLIST : "queues (FIFO)"
+    STUDY_SESSIONS ||--o{ SESSION_EVENTS : "records history"
+    USERS ||--o{ SESSION_PARTICIPANTS : "joins"
+    USERS ||--o{ SESSION_WAITLIST : "waits"
+
+    USERS {
+        bigint id PK "owned by Identity service"
+    }
+    CAFE_REGISTRATION_REQUESTS {
+        bigint id PK
+        varchar cafe_name
+        varchar description "max 1000"
+        varchar location
+        varchar status "PENDING, APPROVED, REJECTED"
+        bigint user_id FK "users.id"
+        timestamp created_at
+        timestamp updated_at
+    }
+    CAFES {
+        bigint id PK
+        varchar name
+        varchar description "max 1000"
+        varchar location
+        boolean active
+        bigint manager_id FK "users.id"
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
+    STUDY_SPACES {
+        bigint id PK
+        varchar name
+        int capacity
+        double price_per_hour
+        boolean available
+        bigint cafe_id FK "cafes.id"
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
+    BOOKINGS {
+        bigint id PK
+        timestamp start_time
+        timestamp end_time
+        varchar status "PENDING, CONFIRMED, CANCELLED, COMPLETED"
+        timestamp created_at
+        timestamp updated_at
+        bigint user_id FK "users.id"
+        bigint study_space_id FK "study_spaces.id"
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
+    STUDY_SESSIONS {
+        bigint id PK
+        varchar title "max 150"
+        varchar description "max 1000"
+        int capacity
+        varchar status "OPEN, FULL, CANCELLED, COMPLETED"
+        bigint booking_id FK, UK "bookings.id"
+        bigint organizer_id FK "users.id"
+        timestamp created_at
+        timestamp updated_at
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
+    SESSION_PARTICIPANTS {
+        bigint id PK
+        bigint session_id FK "study_sessions.id, UK with user_id"
+        bigint user_id FK "users.id"
+        timestamp joined_at
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
+    SESSION_WAITLIST {
+        bigint id PK
+        bigint session_id FK "study_sessions.id"
+        bigint user_id FK "users.id, UK with session_id"
+        int position "UK with session_id"
+        timestamp joined_at
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
+    SESSION_EVENTS {
+        bigint id PK
+        bigint session_id FK "study_sessions.id, indexed"
+        bigint user_id FK "users.id, nullable"
+        varchar event_type "CREATED, JOINED, WAITLISTED, PROMOTED, LEFT, LEFT_WAITLIST, CANCELLED, COMPLETED"
+        varchar details "max 500"
+        timestamp occurred_at
+        bigint audit_created_by
+        bigint audit_updated_by
+    }

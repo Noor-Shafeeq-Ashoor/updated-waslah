@@ -1,0 +1,36 @@
+erDiagram
+    USERS ||--o{ JOBS : "posts (employer)"
+    USERS ||--o{ JOB_APPLICATIONS : "submits (job seeker)"
+    JOBS ||--o{ JOB_APPLICATIONS : "receives"
+
+    USERS {
+        bigint id PK "owned by Identity service"
+    }
+    JOBS {
+        bigint id PK
+        varchar title
+        varchar description "max 2000"
+        varchar company_name
+        varchar location
+        varchar job_type "FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP, FREELANCE"
+        double salary
+        int vacancies "default 1"
+        int filled_vacancies "default 0"
+        timestamp deadline
+        varchar status "OPEN, CLOSED"
+        timestamp created_at
+        timestamp updated_at
+        bigint created_by FK "users.id"
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
+    JOB_APPLICATIONS {
+        bigint id PK
+        bigint job_id FK "jobs.id, UK with user_id"
+        bigint user_id FK "users.id, UK with job_id"
+        varchar status "PENDING, ACCEPTED, REJECTED"
+        varchar cover_letter "max 1000"
+        timestamp applied_at
+        bigint audit_created_by
+        bigint audit_updated_by
+    }
